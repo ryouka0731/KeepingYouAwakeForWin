@@ -6,6 +6,17 @@ using Timer = System.Windows.Forms.Timer;
 
 namespace KeepingYouAwake.UI;
 
+/// <summary>Replaceable dependencies of <see cref="TrayApplicationContext"/>; the defaults are the real ones.</summary>
+/// <param name="Platform">OS services; null for the Windows implementations.</param>
+/// <param name="Shell">Registry integration; null for HKEY_CURRENT_USER.</param>
+/// <param name="BackgroundUpdateChecks">Whether to start the daily GitHub check.</param>
+/// <param name="UpdateHandler">HTTP handler for update checks; null for the network.</param>
+internal sealed record TrayOptions(
+    PlatformServices? Platform = null,
+    ShellIntegration? Shell = null,
+    bool BackgroundUpdateChecks = true,
+    HttpMessageHandler? UpdateHandler = null);
+
 /// <summary>
 /// The app's lifetime: tray icon, menu, notifications and windows around the
 /// <see cref="AppController"/>. Left-click toggles; right-click opens the menu.
@@ -29,18 +40,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private string? pendingUpdateUrl;
     private bool exiting;
 
-    /// <param name="platform">OS services; null for the real Windows implementations.</param>
-    /// <param name="shell">Registry integration; null for HKEY_CURRENT_USER.</param>
-    /// <param name="backgroundUpdateChecks">Whether to start the daily GitHub check.</param>
-    /// <param name="updateHandler">HTTP handler for update checks (tests); null for the network.</param>
-    public TrayApplicationContext(SettingsStore store, ActivityLogger log, PlatformServices? platform = null,
-        ShellIntegration? shell = null, bool backgroundUpdateChecks = true, HttpMessageHandler? updateHandler = null)
+    public TrayApplicationContext(SettingsStore store, ActivityLogger log, TrayOptions? options = null)
     {
+        options ??= new TrayOptions();
         this.store = store;
         this.log = log;
-        this.shell = shell ?? ShellIntegration.Current;
+        shell = options.Shell ?? ShellIntegration.Current;
         PlatformServices services;
-        (services, this.services) = platform is null ? CreateWindowsPlatform() : (platform, []);
+        (services, this.services) = options.Platform is null ? CreateWindowsPlatform() : (options.Platform, []);
 
         clock = services.Scheduler;
         Controller = new AppController(services, store, log);
@@ -66,11 +73,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
         NetworkChange.NetworkAddressChanged += OnNetworkAddressChanged;
         settingsWatcher = WatchSettingsFile();
 
-        updates = new UpdateService(store, updateHandler);
+        updates = new UpdateService(store, options.UpdateHandler);
         updates.UpdateFound += (_, release) => ShowUpdateNotification(release);
 
         Controller.Start();
-        if (backgroundUpdateChecks) { updates.StartBackgroundChecks(); }
+        if (options.BackgroundUpdateChecks) { updates.StartBackgroundChecks(); }
         UpdateTrayState();
     }
 

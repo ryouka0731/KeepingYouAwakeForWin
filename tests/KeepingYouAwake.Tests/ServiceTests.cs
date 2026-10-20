@@ -159,7 +159,7 @@ public class TrayIntegrationTests
         {
             var store = new SettingsStore(Path.Combine(dir, "settings.json"));
             var log = new ActivityLogger(Path.Combine(dir, "activity.jsonl"));
-            using var tray = new TrayApplicationContext(store, log, platform: null, registry.Shell, backgroundUpdateChecks: false);
+            using var tray = new TrayApplicationContext(store, log, new TrayOptions(Shell: registry.Shell, BackgroundUpdateChecks: false));
             tray.Controller.Activate(TimeSpan.FromMinutes(1));
             Assert.True(tray.Controller.IsActive);
             tray.Handle(["--quit"]);
@@ -183,7 +183,7 @@ public class TrayIntegrationTests
             var store = new SettingsStore(path);
             store.Update(s => s.ShowNotifications = true);
             using var tray = new TrayApplicationContext(store, new ActivityLogger(Path.Combine(dir, "a.jsonl")),
-                platform: null, registry.Shell, backgroundUpdateChecks: false);
+                new TrayOptions(Shell: registry.Shell, BackgroundUpdateChecks: false));
 
             File.WriteAllText(path, File.ReadAllText(path).Replace("\"mouseJiggler\": false", "\"mouseJiggler\": true"));
             Sta.PumpUntil(() => store.Settings.MouseJiggler, 10_000);

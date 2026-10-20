@@ -5,6 +5,10 @@ using KeepingYouAwake.UI;
 using KeepingYouAwake.Windows;
 using Microsoft.Win32;
 
+// The app has one UI thread, and UiThread / SystemEvents are process-wide: run the
+// WinForms tests one at a time, each on its own STA thread.
+[assembly: CollectionBehavior(DisableTestParallelization = true)]
+
 namespace KeepingYouAwake.Tests;
 
 /// <summary>Runs WinForms code on a dedicated STA thread with a message-loop context, like the app's UI thread.</summary>
@@ -90,8 +94,8 @@ internal sealed class TrayHarness : IDisposable
         Fakes = new ControllerHarness(configure);
         // The harness's own controller isn't used; the tray builds one on the same fakes.
         Fakes.Controller.Dispose();
-        Context = new TrayApplicationContext(Fakes.Store, Fakes.Log, Platform, registry.Shell, backgroundUpdateChecks: false,
-            updateHandler ?? new FakeReleasesHandler("[]"));
+        Context = new TrayApplicationContext(Fakes.Store, Fakes.Log,
+            new TrayOptions(Platform, registry.Shell, BackgroundUpdateChecks: false, updateHandler ?? new FakeReleasesHandler("[]")));
     }
 
     public ControllerHarness Fakes { get; }
