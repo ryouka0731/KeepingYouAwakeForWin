@@ -272,8 +272,7 @@ internal sealed class SettingsForm : Form
             case WiFiReadStatus.Connected:
                 foreach (var ssid in reading.Ssids)
                 {
-                    var name = ssid;
-                    yield return new ToolStripMenuItem(Strings.Format("AddCurrentNetworkFormat", name), null, (_, _) => wifi.Add(name));
+                    yield return new ToolStripMenuItem(Strings.Format("AddCurrentNetworkFormat", ssid), null, (_, _) => wifi.Add(ssid));
                 }
                 break;
             case WiFiReadStatus.AccessDenied:
