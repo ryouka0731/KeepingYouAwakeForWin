@@ -8,7 +8,7 @@ anyio==4.15.1 \
     --hash=sha256:6152fdbbf9a77fdec97731721bebf7c4c44f7c29b424b0065826173efc7ed101 \
     --hash=sha256:9f28306018cbd6d329e64a36d58256edff76dd996fe423bc957326e578b82a94
     # via
-    #   httpx
+    #   httpx2
     #   mcp
     #   sse-starlette
     #   starlette
@@ -18,13 +18,7 @@ attrs==26.1.0 \
     # via
     #   jsonschema
     #   referencing
-certifi==2026.7.22 \
-    --hash=sha256:62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775 \
-    --hash=sha256:741e2c3b351ddf169a738da9f2c048608ff7f2c5cc02f1ebc6b118bb090d5d55
-    # via
-    #   httpcore
-    #   httpx
-cffi==2.1.1 ; platform_python_implementation != 'PyPy' \
+cffi==2.1.1 \
     --hash=sha256:046bfc24911b37851ee1b51aab8bffe713d89c68c6a057b09484ce9fd5f69b4e \
     --hash=sha256:06c72bb76605a4b0cd0aad6930b69d4baf7dd5d806cfc409b824191099700e66 \
     --hash=sha256:0beceaabe56af686895136a2de78db54ecd8e4046b236b8fd6d6cb61389e9bf2 \
@@ -126,15 +120,11 @@ cffi==2.1.1 ; platform_python_implementation != 'PyPy' \
     --hash=sha256:fb92203a88b3d3053034db775110081c49d28be6551923805e039924093761e4 \
     --hash=sha256:fcd22650c908d7b7da162bbfaab594a1227a15d1643a98c68b122ac642fa2264
     # via cryptography
-click==8.5.0 ; sys_platform != 'emscripten' \
+click==8.5.0 \
     --hash=sha256:255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360 \
     --hash=sha256:ba0d2089de75ea0310e2dde03160e6ca10009947fb95a182f9b54021bb272e34
     # via uvicorn
-colorama==0.4.6 ; sys_platform == 'win32' \
-    --hash=sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44 \
-    --hash=sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6
-    # via pytest
-coverage==7.16.2 \
+coverage[toml]==7.16.2 \
     --hash=sha256:00d3eb96e9988c45f50cccd1f1496571ac5c1f91386ac02c4d55516eeda19a24 \
     --hash=sha256:01c6908bc613b420c26c818fe948e1b97dfd041a53c98b01c63bd8321f5c9aae \
     --hash=sha256:066429634299e14dd2d511e1e85f8f9cecc500781f6b41907c0dd6f1baea7e63 \
@@ -322,26 +312,22 @@ h11==0.16.0 \
     --hash=sha256:4e35b956cf45792e4caa5885e69fba00bdbc6ffafbfa020300e549b208ee5ff1 \
     --hash=sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86
     # via
-    #   httpcore
+    #   httpcore2
     #   uvicorn
-httpcore==1.0.9 \
-    --hash=sha256:2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55 \
-    --hash=sha256:6e34463af53fd2ab5d807f399a9b45ea31c3dfa2276f15a2c3f00afff6e176e8
-    # via httpx
-httpx==0.28.1 \
-    --hash=sha256:75e98c5f16b0f35b567856f597f06ff2270a374470a5c2392242528e3e3e42fc \
-    --hash=sha256:d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad
-    # via mcp
-httpx-sse==0.4.3 \
-    --hash=sha256:0ac1c9fe3c0afad2e0ebb25a934a59f4c7823b60792691f779fad2c5568830fc \
-    --hash=sha256:9b1ed0127459a66014aec3c56bebd93da3c1bc8bb6618c8082039a44889a755d
+httpcore2==2.15.1 \
+    --hash=sha256:730f603058c260a3288378217b464713350c23e3b8fe8bba753701054032d98a \
+    --hash=sha256:a94b6b3e6260e1a3f035915408d3dcd7dc8e844c2b544b642e227cf98a747af0
+    # via httpx2
+httpx2==2.15.1 \
+    --hash=sha256:75841cd83d16b417f7d6da8f2089ce8120806efdbf96af37d46c5129c49015be \
+    --hash=sha256:ff75485308fbe441e75b1218546e4e78d884df41e1a9741c1f79335ed8fcfef7
     # via mcp
 idna==3.20 \
     --hash=sha256:a7db850025b95ded1eae8a46181a1a6c56c92c96f0e2b005d9ff8dc0210cab44 \
     --hash=sha256:ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c
     # via
     #   anyio
-    #   httpx
+    #   httpx2
 iniconfig==2.3.0 \
     --hash=sha256:c76315c77db068650d49c5b56314774a7804df16fee4402c1f19d6d15d8c4730 \
     --hash=sha256:f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12
@@ -357,11 +343,19 @@ jsonschema-specifications==2025.9.1 \
 lizard==1.24.1 \
     --hash=sha256:746060a3e9a375af7340b2d4c6aab307b8a8b4199339c36ddc7afc4188b53d1c \
     --hash=sha256:c022cf1aac8170994b175e2a700f0535088f66da7e6bdf6c59fbd3b716cd10ac
-    # via -r .github/requirements/requirements-python-tests.in
-mcp==1.30.0 \
-    --hash=sha256:445414625fce5c295faa505bb11bacece661ab6f4028d57c935db57820b7a3e4 \
-    --hash=sha256:666edb5009503e1047c9d60346a756f94b261f05cc2625f23d41c728ffc484d0
-    # via -r .github/requirements/requirements-python-tests.in
+    # via -r requirements-python-tests.in
+mcp==2.3.0 \
+    --hash=sha256:8b147a50441cf059dc88c684e0aeed3687f0aa0f39c6cde7b90330effd2b34d8 \
+    --hash=sha256:dd0c44c089d16453e8ae31a3877a0054d7a2314caaa81f5e0541b9b1734b2377
+    # via -r requirements-python-tests.in
+mcp-types==2.3.0 \
+    --hash=sha256:968efdbdaedfab06adae40d378a34395f1090c5921d4be3c9cde283aaf76d91d \
+    --hash=sha256:d1e46549edb35ee19a94940fcee6d1addd7e589ab7ea92dda83f5d84781fc362
+    # via mcp
+opentelemetry-api==1.45.1 \
+    --hash=sha256:aa38ed19bcc084ba42782a73255b3582283eced7ad6dddbd6695189e69adfb75 \
+    --hash=sha256:b31553efa588ae44bc306f863c785c5333a9ecc091248c6ee68b4b6c87fdedfb
+    # via mcp
 packaging==26.3 \
     --hash=sha256:94edc256424af38762eb31306eed28beb9f0efc50a8837492c9d6fd6004aed79 \
     --hash=sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c
@@ -376,7 +370,7 @@ pluggy==1.6.0 \
     # via
     #   pytest
     #   pytest-cov
-pycparser==3.0 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy' \
+pycparser==3.0 \
     --hash=sha256:600f49d217304a5902ac3c37e1281c9fe94e4d0489de643a9504c5cdfdfc6b29 \
     --hash=sha256:b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992
     # via cffi
@@ -385,7 +379,7 @@ pydantic==2.13.5 \
     --hash=sha256:51a9c5f7b2f8e636f04c6cada605d9b6a3bf1348fdf945a3d8869b19bba0ee08
     # via
     #   mcp
-    #   pydantic-settings
+    #   mcp-types
 pydantic-core==2.46.5 \
     --hash=sha256:013d6f3483d81e02e7c328831808f336c8596ee33b4bd4026b9ffb1e960b8942 \
     --hash=sha256:03b9666e41e35d8909852ba191a0607520f81b74eaf12ccf8737005dbb313821 \
@@ -508,17 +502,13 @@ pydantic-core==2.46.5 \
     --hash=sha256:fc8515076c11f3cfdf4fb142dcca0fe384b1230a3b5415458ac84f3e0903ec13 \
     --hash=sha256:ff218293c9c806138dca139765e3b067621be52bcd93cdc14c7711be7ddc90a9
     # via pydantic
-pydantic-settings==2.15.0 \
-    --hash=sha256:0ba092c291c94baceb5eff768aa0d56400a457585bc0175925a5a5510303da42 \
-    --hash=sha256:694b793e84f766ba76a90ebdefc01d0a9a045dab0382bee70393da93712ad117
-    # via mcp
 pygments==2.21.0 \
     --hash=sha256:2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9 \
     --hash=sha256:610ca751c9bc2492b38eb9a38a7fbc93edbbb2d7182edaf34e66ae493dee5c8c
     # via
     #   lizard
     #   pytest
-pyjwt==2.15.1 \
+pyjwt[crypto]==2.15.1 \
     --hash=sha256:42d59d631f7768a1028a64c7ff581a9bf7519804daf91fc5b6c56e30eec5e193 \
     --hash=sha256:4f259e80cdfb6b3fc18a7de51fd1ef9ec79652f25019bae68975ca2468a34df8
     # via mcp
@@ -526,42 +516,15 @@ pytest==9.1.1 \
     --hash=sha256:1088fbde8f2b49d95a549a195707afa7a76a3ce9bcadc26b6d71f0ffda5fe313 \
     --hash=sha256:37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c
     # via
-    #   -r .github/requirements/requirements-python-tests.in
+    #   -r requirements-python-tests.in
     #   pytest-cov
 pytest-cov==7.1.0 \
     --hash=sha256:30674f2b5f6351aa09702a9c8c364f6a01c27aae0c1366ae8016160d1efc56b2 \
     --hash=sha256:a0461110b7865f9a271aa1b51e516c9a95de9d696734a2f71e3e78f46e1d4678
-    # via -r .github/requirements/requirements-python-tests.in
-python-dotenv==1.2.4 \
-    --hash=sha256:42269a8a5b3fd54ffa6f3d84b18abed50064717576b4ecf03dc4a55d8aa04fdc \
-    --hash=sha256:f0d53e69935a851c0dcc78f3ab7aaccd8cabef0b92382b576b824212902873c0
-    # via pydantic-settings
+    # via -r requirements-python-tests.in
 python-multipart==0.0.32 \
     --hash=sha256:be54b7f3fa167bb83e4fcd936b887b708f4e57fe75911c02aebf53efaf8d938e \
     --hash=sha256:ff6d3f776f16878c894e52e107296ffc890e913c611b1a4ec6c44e2821fe2e23
-    # via mcp
-pywin32==312 ; sys_platform == 'win32' \
-    --hash=sha256:02ebca0f0242b75292e218065004310d6a477407c09fa449bfe4f6022bc0c0fc \
-    --hash=sha256:17948aeadbdb091f0ced6ef0841620794e68327b94ee415571c1203594b7215c \
-    --hash=sha256:3020656e34f1cf7faeb7bccd2b84653a607c6ff0c55ada85e6487d61716deabd \
-    --hash=sha256:59aba5d5940842075343a5ddc6b11f1cdf0d1567fe745290359dfbcc7c2eb831 \
-    --hash=sha256:5c1fbe4a937a73ae9297384a3da38518cbc694c68ad8a809b2e19acd350f03ed \
-    --hash=sha256:5dbc35d2b5320dc07f25fa31269cfb767471002b17de5eb067d03da68c7cb2db \
-    --hash=sha256:6017c58e12f6809fbb0555b75df144c2922a9ffd18e4b9b5afa863b6c1a9d950 \
-    --hash=sha256:772235332b5d1024c696f11cea1ae4be7930f0a8b894bb43db14e3f435f1ff7e \
-    --hash=sha256:7a27df850933d16a8eabfbaeb73d52b273e2da667f80d70b01a89d1f6828d02c \
-    --hash=sha256:9fce94568364e0155e6dfb781ac5d95903be8baf28670632beab1b523f300daa \
-    --hash=sha256:a4dd3a848290ef724347b19f301045831d8e802fa4464f491b98b1e0a081432e \
-    --hash=sha256:a77a90fbb6881238d2ca9c6fd797b25817f3768fe78d214a90137ff055a75f5b \
-    --hash=sha256:a8597d28f267b39074aef51fa593530082b39cbe5a074226096857b1fed2dfb9 \
-    --hash=sha256:b2200a054ca6d6625c4842fc56a4976a4b47f96b73dbe5538c3f813a80359f47 \
-    --hash=sha256:b457f6d628a47e8a7346ce22acb7e1a46a4a78b52e1d17e1af56871bd19a93bc \
-    --hash=sha256:c2f03a0f73f804a13c2735b99392b0cd426bb4f2c4d0178e5ac966a0f21618d5 \
-    --hash=sha256:c53e878d15a1c44788082bfe712a905433473aa38f86375b7cf8b45e3acbaaf9 \
-    --hash=sha256:d11417d84412f859b722fad0841b3614459ed0047f7542d8362e77884f6b6e8a \
-    --hash=sha256:d620900033cc7531e50727c3c8333091df5dd3ffe6d68cdca38c03f5821408d5 \
-    --hash=sha256:dab4f65ac9c4e48400a2a0530c46c3c579cd5905ecd11b80692373915269208b \
-    --hash=sha256:dc90147579a905b8635e1b0ec6514967dcb07e6e0d9c42f1477feef14cac23bb
     # via mcp
 referencing==0.37.0 \
     --hash=sha256:381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231 \
@@ -711,16 +674,22 @@ starlette==1.7.0 \
     # via
     #   mcp
     #   sse-starlette
+truststore==0.10.5 \
+    --hash=sha256:30d36967ccaded5cbb38d602c433f53600036c79d502f4533a49b60a03bbefcd \
+    --hash=sha256:9aaaedaefaf06d8b206278cf8b5012bc897f485a874503501e12d776df78951c
+    # via
+    #   httpcore2
+    #   httpx2
 typing-extensions==4.16.0 \
     --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8 \
     --hash=sha256:dc983d19a509c94dba722ee6abd33940f7c05a89e243c47e907eb4db6f1a43e5
     # via
     #   anyio
     #   mcp
+    #   mcp-types
+    #   opentelemetry-api
     #   pydantic
     #   pydantic-core
-    #   referencing
-    #   starlette
     #   typing-inspection
 typing-inspection==0.4.4 \
     --hash=sha256:547274fa6b0a561ccf549cc9524b999a578e737d015d8709d021f9d0d13bea47 \
@@ -728,8 +697,7 @@ typing-inspection==0.4.4 \
     # via
     #   mcp
     #   pydantic
-    #   pydantic-settings
-uvicorn==0.54.0 ; sys_platform != 'emscripten' \
+uvicorn==0.54.0 \
     --hash=sha256:505bdb0f318731d45f1f712071fc781a8981f6847a31c902c9f5e652d4f67faf \
     --hash=sha256:a2e33cbfaa0306f8e6b0c13e0cb89d7d7a2da3e62b90c66e18c33d9807b28620
     # via mcp
