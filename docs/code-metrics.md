@@ -3,22 +3,25 @@
 KeepingYouAwake for Windows のテスト網羅性とコード品質の指標です。
 
 - 計測日: 2026-10-21
-- 比較対象: テスト拡充の前は `main`（52b0bec、v1.0.0 時点）、後は PR #6
-- 計測方法: 後半の「最新の計測値」は [`scripts/code_metrics.py`](../scripts/code_metrics.py) が CI で出力したものをそのまま貼っています。前後比較の表も同じスクリプトと同じ除外条件で計測しました。
+- 比較対象: テスト拡充の前は `main`（52b0bec、v1.0.0 時点）、後は PR #6 と PR #8
+- 計測方法: 前後どちらの値も [`scripts/code_metrics.py`](../scripts/code_metrics.py) で集計しています。
+  - 「改善前」の Core と Python は、52b0bec を別の作業ツリーに展開し、同じツール（coverlet、ReportGenerator、pytest-cov、lizard）・同じ除外条件で計測し直した値です。
+  - 改善前の Windows アプリにはテストがありませんでした。
+  - 「改善後」と後半の「最新の計測値」は、Windows CI で計測した値を貼り付けています。
 
 ## 要約
 
 | 指標 | 改善前 | 改善後 |
 |---|---:|---:|
-| テストの総数 | 231（＋CI のスモークテスト 1 本） | **382** |
+| テストの総数 | 231（＋CI のスモークテスト 1 本） | **398** |
 | C# Core のユニットテスト | 110 | **193** |
-| Windows アプリのコンポーネント／プラットフォームテスト | 0 | **41** |
+| Windows アプリのコンポーネント／プラットフォームテスト | 0 | **57** |
 | Python のテスト（ユニット・プロトコル） | 121 | **137** |
 | e2e テスト（配布用 exe を実際に操作） | 0（スモークテスト 1 ステップのみ） | **11** |
 | Core の行／分岐カバレッジ | 93.6% / 80.0% | **99.1% / 93.8%** |
-| Windows アプリの行／分岐カバレッジ | 0% / 0%（未計測） | **85.7% / 62.2%** |
-| Python ツールの行／分岐カバレッジ | 96%（行と分岐の合算） | **98.7% / 98.2%** |
-| 平均循環的複雑度（CCN） | 3.22 | **2.85** |
+| Windows アプリの行／分岐カバレッジ | 0% / 0%（テストなし） | **92.2% / 75.1%** |
+| Python ツールの行／分岐カバレッジ | 96.3% / 90.3% | **98.7% / 98.2%** |
+| 平均循環的複雑度（CCN） | 3.22 | **2.78** |
 | 最大 CCN | 21 | **10** |
 | CCN が 10 を超える関数 | 10 | **0** |
 | 50 NLOC を超える関数 | 4 | **0** |
@@ -31,7 +34,7 @@ KeepingYouAwake for Windows のテスト網羅性とコード品質の指標で�
 | 閾値 | 値 |
 |---|---|
 | Core のカバレッジ | 行 97% 以上、分岐 90% 以上 |
-| Windows アプリのカバレッジ | 行 80% 以上、分岐 55% 以上 |
+| Windows アプリのカバレッジ | 行 90% 以上、分岐 70% 以上 |
 | Python のカバレッジ | 行 97% 以上、分岐 95% 以上 |
 | 関数ごとの上限 | CCN 10 以下、50 NLOC 以下、引数 5 個以下 |
 
@@ -41,7 +44,7 @@ KeepingYouAwake for Windows のテスト網羅性とコード品質の指標で�
 |---|---|---|---|
 | ユニット | `tests/KeepingYouAwake.Core.Tests` | すべての OS | セッションの開始と終了、各トリガー、「トリガーは自分で開始したセッションしか止めない」というルール、設定とログの読み書き、書き込み失敗からの回復、URL コマンド、Win32 の戻り値の解釈、トレイ表示の組み立て |
 | API | `UpdateCheckerApiTests`、`tools/mcp-server/tests/test_mcp_protocol.py` | すべての OS | GitHub Releases API に送るリクエストとレスポンスの扱い（HTTP はスタブ）。MCP サーバーを実際に起動して stdio の JSON-RPC で通信し、ツール一覧・呼び出し・スキーマ検証を確認 |
-| コンポーネント | `tests/KeepingYouAwake.Tests`（`ComponentTests`、`ServiceTests`） | Windows | トレイメニュー、設定画面の 7 タブ、各ダイアログ、アクティビティログ画面。WinForms のコントロールを実際に操作し、設定が書き換わることと画面に反映されることを確認 |
+| コンポーネント | `tests/KeepingYouAwake.Tests`（`ComponentTests`、`ServiceTests`、`DialogAndProbeTests`） | Windows | トレイメニュー、設定画面の 7 タブ、各ダイアログ、アクティビティログ画面。WinForms のコントロールを実際に操作し、設定が書き換わることと画面に反映されることを確認。ダイアログ経由の操作（時間の追加・リセット、監視項目の追加、アクティブ時間の編集、アップデート確認の結果表示）は、回答を用意した `IUserPrompts` で検証。本物のダイアログ（WinForms 製・メッセージボックス・ファイル／フォルダー選択）は、表示中の待機ループの中から自動で応答させて検証 |
 | プラットフォーム | `tests/KeepingYouAwake.Tests`（`PlatformTests`） | Windows | 実際の Win32 API（電源要求、電源状態、ディスプレイ構成、Native Wifi、Core Audio、CPU 時間、入力）。レジストリは専用のサンドボックスに書く。単一インスタンス用の名前付きパイプ、UI スケジューラ |
 | e2e | `tools/e2e/test_e2e_windows.py` | Windows CI | 配布用の exe を起動し、`kya` CLI（URL スキーム経由）、転送されたコマンドライン引数、`settings.json` の書き換えで操作。アクティビティログと `powercfg /requests` で結果を確認。時間切れ、監視アプリ、ダウンロードトリガー、ユーザーのセッションを保護する動作、正常終了、強制終了からの復旧を含む |
 
@@ -59,6 +62,8 @@ KeepingYouAwake for Windows のテスト網羅性とコード品質の指標で�
   - `UpdateService`: HTTP ハンドラを注入できます。
   - `KEEPINGYOUAWAKE_DATA_DIR`: e2e テストでデータの保存先を分けるための環境変数です。
 - **終了コマンドを追加**: `--quit` / `keepingyouawake:///quit`。e2e テストや自動化から正常終了させるために追加しました。
+- **ダイアログ表示を差し替え可能に**: 設定画面のダイアログ表示をすべて `IUserPrompts` 経由にしました。
+- **Wi-Fi・音声デバイスの API 呼び出しを分離**: Native Wifi と Core Audio の呼び出しを、薄いインターフェース（`IWlanNative` / `IAudioEndpointReader`）の向こう側に置きました。アダプタなし、アクセス拒否、SSID の伏せ字化、複数アダプタ、COM エラーといった結果を、ハードウェアなしでテストできます。
 
 ### 複雑度を下げた関数
 
@@ -82,13 +87,22 @@ KeepingYouAwake for Windows のテスト網羅性とコード品質の指標で�
 - **Windows 固有の挙動**: 隠しファイルは属性を外さないと上書きできません。アプリ側は対応済みで、テストの書き方を修正しました。WinForms は、選択されていないタブにあるボタンへの `PerformClick` を無視します。テストは利用者と同じくタブを選んでから押すようにしました。
 - **MCP サーバーの実際の挙動**: 不正な引数は、ツールの処理より先に SDK のスキーマ検証で弾かれます。プロトコルレベルのテストで初めて確認できました。
 - **アプリ全体で共有される UI 状態**: `UiThread` と `SystemEvents` はプロセス全体で 1 つです。WinForms のテストは並列ではなく 1 件ずつ実行するようにしました。
+- **カバレッジ計測の欠落**: coverlet が `System.Windows.Forms` を解決できず、アプリ本体（`KeepingYouAwake.dll`）を計測対象から黙って外していました。テスト基盤の診断ログで原因を特定し、`PreserveCompilationContext` で解消しました。あわせて、レポートにコンポーネントが欠けていたら閾値チェックを失敗させるようにしました。
+- **OK ボタンだけのメッセージボックス**: OK ボタンの ID を送っても閉じません（`WM_CLOSE` で閉じる）。自動応答のヘルパーに反映しました。
 
 ## 未カバーの部分とその理由
 
-- **`Windows/NetworkAndAudio.cs`（26.9%）**: 未カバーなのは、Wi-Fi アダプタと音声デバイスがあるときだけ通る P/Invoke と COM の呼び出し部分です。CI のランナーにはどちらもないため実行できません。バッファや分類の解釈は Core のテストで 100% カバーしています。
-- **`SettingsForm` のモーダルダイアログを開く処理**: ファイル選択、フォルダー選択、確認メッセージの各ダイアログは、操作されるまで処理が戻りません。ダイアログ自体は単体でテストしています。
+- **`Windows/NetworkAndAudio.cs`（60.3%）**: 残っているのは、Native Wifi と Core Audio を実際に呼び出す部分（`WlanNative`、`CoreAudioEndpointReader`）です。CI のランナーには Wi-Fi アダプタも音声デバイスもないため、成功時の処理を通せません。結果の判定と解釈は、偽の実装を使ったテストですべて検証しています。
+- **`UpdateService.cs`（78.6%）**: 起動 30 秒後と 1 時間ごとに確認するタイマーが未カバーです。確認処理そのもの（`CheckIfDueAsync` / `CheckNowAsync`）はテスト済みです。
+- **`PowerServices.cs`（86.0%）**: 未カバーなのは次の 3 種類です。いずれも、そのとき通る判断の部分は Core 側で偽の実装を使ってテスト済みです。
+  - 電源要求 API が失敗したときだけ使う代替経路（`SetThreadExecutionState`）
+  - 電源状態やディスプレイ構成が CI の実行中に実際に変わったときだけ通る更新処理
+  - ディスプレイ構成を取得できなかったときのフォールバック
+- **`ShellIntegration.cs`（85.4%）**: 未カバーなのは次の 3 種類です。
+  - `OpenUrl`: 実際にブラウザーを起動するため、テストでは呼ばず、記録だけする偽の実装に差し替えています。
+  - レジストリへの書き込みが拒否されたときと、名前付きパイプの I/O 例外の処理。
+  - 実際の HKCU を使う既定のインスタンス。テストはレジストリのサンドボックスを使います。
 - **`Program.cs`**: アプリの起点で、e2e テストが実際の exe として毎回実行しています。ユニットテストのカバレッジ計測からは除外しています（`[ExcludeFromCodeCoverage]`）。
-- **`PowerRequestAssertion` の代替経路**（`SetThreadExecutionState`）: `PowerCreateRequest` が失敗したときだけ使われます。
 
 ## 再計測の方法
 
@@ -110,7 +124,7 @@ CI では毎回、同じ表を GitHub Actions のジョブサマリーに出力�
 
 | Component | Line | Branch | Covered / coverable lines |
 |---|---:|---:|---:|
-| `KeepingYouAwake` (.NET) | 85.7% | 62.2% | 1036 / 1209 |
+| `KeepingYouAwake` (.NET) | 92.2% | 75.1% | 1146 / 1243 |
 | `KeepingYouAwake.Core` (.NET) | 99.1% | 93.8% | 1288 / 1300 |
 | Python tools (`kya`, MCP server) | 98.7% | 98.2% | 887 / 899 |
 
@@ -118,22 +132,22 @@ Lowest-covered files:
 
 | File | Line coverage |
 |---|---:|
-| `KeepingYouAwake/Windows/NetworkAndAudio.cs` | 26.9% (18/67) |
+| `KeepingYouAwake/Windows/NetworkAndAudio.cs` | 60.3% (47/78) |
 | `KeepingYouAwake/UI/UpdateService.cs` | 78.6% (33/42) |
-| `KeepingYouAwake/UI/SettingsForm.cs` | 83.2% (333/400) |
 | `KeepingYouAwake/Windows/ShellIntegration.cs` | 85.4% (70/82) |
 | `KeepingYouAwake/Windows/PowerServices.cs` | 86.0% (117/136) |
 | `KeepingYouAwake.Core/DriveAliveTimer.cs` | 92.0% (81/88) |
 | `KeepingYouAwake/Windows/WinFormsScheduler.cs` | 93.3% (28/30) |
 | `kya_mcp_server.py` | 93.9% (168/179) |
+| `KeepingYouAwake/UI/TrayApplicationContext.cs` | 94.6% (174/184) |
 
 ### Complexity
 
 | Metric | Value |
 |---|---:|
-| Functions | 317 |
-| Function NLOC (total) | 3142 |
-| Average cyclomatic complexity (CCN) | 2.85 |
+| Functions | 334 |
+| Function NLOC (total) | 3184 |
+| Average cyclomatic complexity (CCN) | 2.78 |
 | Max CCN | 10 |
 | Functions with CCN > 10 | 0 |
 | Functions longer than 50 NLOC | 0 |
@@ -147,10 +161,10 @@ Most complex functions:
 | `PlatformServices::OnPowerChanged` | `src/KeepingYouAwake.Core/AppController.cs:513` | 10 | 22 |
 | `ActivityLogEntry::Parse` | `src/KeepingYouAwake.Core/ActivityLogger.cs:210` | 10 | 10 |
 | `ActivityLogEntry::RecordStarted` | `src/KeepingYouAwake.Core/ActivityLogger.cs:73` | 9 | 28 |
-| `CoreAudioProbe::IsDefaultOutputExternal` | `src/KeepingYouAwake/Windows/NetworkAndAudio.cs:96` | 9 | 28 |
 | `ReleaseInfo::ParseVersion` | `src/KeepingYouAwake.Core/UpdateChecker.cs:68` | 9 | 17 |
 | `ScheduleWindow::Contains` | `src/KeepingYouAwake.Core/ScheduleWindow.cs:27` | 9 | 15 |
-| `ReleaseInfo::SelectUpdate` | `src/KeepingYouAwake.Core/UpdateChecker.cs:30` | 9 | 14 |
-| `TrayOptions::Perform` | `src/KeepingYouAwake/UI/TrayApplicationContext.cs:242` | 9 | 14 |
+| `TrayOptions::Perform` | `src/KeepingYouAwake/UI/TrayApplicationContext.cs:246` | 9 | 14 |
 | `ReleaseInfo::ParseRelease` | `src/KeepingYouAwake.Core/UpdateChecker.cs:49` | 9 | 11 |
+| `PlatformServices::OnSessionEnded` | `src/KeepingYouAwake.Core/AppController.cs:271` | 9 | 10 |
+| `_current_status` | `tools/mcp-server/kya_mcp_server.py:218` | 8 | 25 |
 <!-- metrics:end -->

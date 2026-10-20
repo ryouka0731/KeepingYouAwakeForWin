@@ -11,11 +11,13 @@ namespace KeepingYouAwake.UI;
 /// <param name="Shell">Registry integration; null for HKEY_CURRENT_USER.</param>
 /// <param name="BackgroundUpdateChecks">Whether to start the daily GitHub check.</param>
 /// <param name="UpdateHandler">HTTP handler for update checks; null for the network.</param>
+/// <param name="Prompts">Modal dialogs of the Settings window; null for the real ones.</param>
 internal sealed record TrayOptions(
     PlatformServices? Platform = null,
     ShellIntegration? Shell = null,
     bool BackgroundUpdateChecks = true,
-    HttpMessageHandler? UpdateHandler = null);
+    HttpMessageHandler? UpdateHandler = null,
+    IUserPrompts? Prompts = null);
 
 /// <summary>
 /// The app's lifetime: tray icon, menu, notifications and windows around the
@@ -26,6 +28,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly SettingsStore store;
     private readonly ActivityLogger log;
     private readonly ShellIntegration shell;
+    private readonly IUserPrompts? prompts;
     private readonly Core.Platform.IScheduler clock;
     private readonly UpdateService updates;
     private readonly List<IDisposable> services;
@@ -46,6 +49,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         this.store = store;
         this.log = log;
         shell = options.Shell ?? ShellIntegration.Current;
+        prompts = options.Prompts;
         PlatformServices services;
         (services, this.services) = options.Platform is null ? CreateWindowsPlatform() : (options.Platform, []);
 
@@ -262,7 +266,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         if (settingsForm is null || settingsForm.IsDisposed)
         {
-            settingsForm = new SettingsForm(store, Controller.Durations, updates, shell);
+            settingsForm = new SettingsForm(store, Controller.Durations, updates, shell, prompts);
         }
         settingsForm.ShowAndActivate();
         return settingsForm;

@@ -27,7 +27,10 @@ internal static class Sta
         });
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
-        if (!thread.Join(TimeSpan.FromSeconds(60))) { throw new TimeoutException("STA test body did not finish"); }
+        if (!thread.Join(TimeSpan.FromSeconds(60)))
+        {
+            throw new TimeoutException("STA test body did not finish. Dialog log: " + string.Join(" | ", DialogLog));
+        }
         failure?.Throw();
     }
 
@@ -57,6 +60,123 @@ internal static class Sta
         Assert.True(button.CanSelect, $"button '{button.Text}' is not clickable");
         button.PerformClick();
     }
+
+    /// <summary>
+    /// Runs <paramref name="answer"/> on the next <typeparamref name="T"/> form once it is shown —
+    /// i.e. from inside its modal loop, so code calling <c>ShowDialog</c> can be tested.
+    /// </summary>
+    public static void WhenFormShown<T>(Action<T> answer) where T : Form =>
+        Poll(() =>
+        {
+            if (Application.OpenForms.OfType<T>().FirstOrDefault(f => f.Visible) is not { } form) { return false; }
+            answer(form);
+            return true;
+        });
+
+    public const int IdOk = 1;
+    public const int IdCancel = 2;
+
+    /// <summary>What the native-dialog helper saw and did, reported when a test times out.</summary>
+    public static System.Collections.Concurrent.ConcurrentQueue<string> DialogLog { get; } = new();
+
+    private const string ClaimProperty = "KeepingYouAwake.Tests.Claimed";
+    private static int nextClaim;
+
+    /// <summary>
+    /// Presses <paramref name="buttonId"/> on the next native dialog of this thread (MessageBox, file / folder
+    /// pickers). Keeps pressing until that dialog is gone: a dialog still initializing ignores early input.
+    /// </summary>
+    public static void WhenNativeDialogShown(int buttonId)
+    {
+        var dialog = IntPtr.Zero;
+        var claim = new IntPtr(++nextClaim);
+        var attempts = 0;
+        Poll(() =>
+        {
+            if (dialog == IntPtr.Zero)
+            {
+                dialog = FindUnclaimedDialog();
+                if (dialog == IntPtr.Zero) { return false; }
+                DialogLog.Enqueue($"claim {dialog:X} for {buttonId}");
+                // Tagged on the window itself: a later dialog may reuse the same handle value.
+                SetProp(dialog, ClaimProperty, claim);
+            }
+            if (!IsWindow(dialog) || GetProp(dialog, ClaimProperty) != claim)
+            {
+                DialogLog.Enqueue($"gone {dialog:X}");
+                return true;
+            }
+            DialogLog.Enqueue($"post {buttonId} to {dialog:X}");
+            PostMessage(dialog, WmCommand, new IntPtr(buttonId), IntPtr.Zero);
+            // A message box with a single OK button doesn't answer to IDOK; closing it is the same as OK.
+            if (buttonId == IdCancel || ++attempts > 3) { PostMessage(dialog, WmClose, IntPtr.Zero, IntPtr.Zero); }
+            return false;
+        }, intervalMilliseconds: 150);
+    }
+
+    private static IntPtr FindUnclaimedDialog()
+    {
+        var found = IntPtr.Zero;
+        var seen = new List<string>();
+        EnumThreadWindows(GetCurrentThreadId(), (hwnd, _) =>
+        {
+            var name = new System.Text.StringBuilder(64);
+            GetClassName(hwnd, name, name.Capacity);
+            seen.Add($"{name}{(IsWindowVisible(hwnd) ? "" : "(hidden)")}");
+            if (name.ToString() == "#32770" && IsWindowVisible(hwnd) && GetProp(hwnd, ClaimProperty) == IntPtr.Zero) { found = hwnd; return false; }
+            return true;
+        }, IntPtr.Zero);
+        if (found == IntPtr.Zero && seen.Count > 0 && DialogLog.Count < 200) { DialogLog.Enqueue("scan: " + string.Join(",", seen.Distinct())); }
+        return found;
+    }
+
+    /// <summary>Calls <paramref name="tick"/> on this thread periodically (also inside modal loops) until it returns true.</summary>
+    private static void Poll(Func<bool> tick, int intervalMilliseconds = 20)
+    {
+        var timer = new System.Windows.Forms.Timer { Interval = intervalMilliseconds };
+        var deadline = Environment.TickCount64 + 15_000;
+        timer.Tick += (_, _) =>
+        {
+            if (!tick() && Environment.TickCount64 < deadline) { return; }
+            timer.Stop();
+            timer.Dispose();
+        };
+        timer.Start();
+    }
+
+    private const int WmCommand = 0x0111;
+    private const int WmClose = 0x0010;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool IsWindow(IntPtr hwnd);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool SetProp(IntPtr hwnd, string name, IntPtr data);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern IntPtr GetProp(IntPtr hwnd, string name);
+
+    private delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool EnumThreadWindows(uint threadId, EnumWindowsProc callback, IntPtr lParam);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern int GetClassName(IntPtr hwnd, System.Text.StringBuilder name, int capacity);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool IsWindowVisible(IntPtr hwnd);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool PostMessage(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam);
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
 
     /// <summary>Pumps messages for a fixed time.</summary>
     public static void Pump(int milliseconds = 100)
@@ -90,13 +210,13 @@ internal sealed class TrayHarness : IDisposable
 {
     private readonly RegistrySandbox registry = new();
 
-    public TrayHarness(Action<AppSettings>? configure = null, HttpMessageHandler? updateHandler = null)
+    public TrayHarness(Action<AppSettings>? configure = null, HttpMessageHandler? updateHandler = null, IUserPrompts? prompts = null)
     {
         Fakes = new ControllerHarness(configure);
         // The harness's own controller isn't used; the tray builds one on the same fakes.
         Fakes.Controller.Dispose();
         Context = new TrayApplicationContext(Fakes.Store, Fakes.Log,
-            new TrayOptions(Platform, registry.Shell, BackgroundUpdateChecks: false, updateHandler ?? new FakeReleasesHandler("[]")));
+            new TrayOptions(Platform, registry.Shell, BackgroundUpdateChecks: false, updateHandler ?? new FakeReleasesHandler("[]"), prompts));
     }
 
     public ControllerHarness Fakes { get; }
