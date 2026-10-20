@@ -73,7 +73,8 @@ internal static class Sta
     public const int IdOk = 1;
     public const int IdCancel = 2;
 
-    private static readonly HashSet<IntPtr> ClaimedDialogs = [];
+    private const string ClaimProperty = "KeepingYouAwake.Tests.Claimed";
+    private static int nextClaim;
 
     /// <summary>
     /// Presses <paramref name="buttonId"/> on the next native dialog of this thread (MessageBox, file / folder
@@ -82,15 +83,17 @@ internal static class Sta
     public static void WhenNativeDialogShown(int buttonId)
     {
         var dialog = IntPtr.Zero;
+        var claim = new IntPtr(++nextClaim);
         Poll(() =>
         {
             if (dialog == IntPtr.Zero)
             {
                 dialog = FindUnclaimedDialog();
                 if (dialog == IntPtr.Zero) { return false; }
-                ClaimedDialogs.Add(dialog);
+                // Tagged on the window itself: a later dialog may reuse the same handle value.
+                SetProp(dialog, ClaimProperty, claim);
             }
-            if (!IsWindow(dialog)) { return true; }
+            if (!IsWindow(dialog) || GetProp(dialog, ClaimProperty) != claim) { return true; }
             PostMessage(dialog, WmCommand, new IntPtr(buttonId), IntPtr.Zero);
             if (buttonId == IdCancel) { PostMessage(dialog, WmClose, IntPtr.Zero, IntPtr.Zero); }
             return false;
@@ -104,7 +107,7 @@ internal static class Sta
         {
             var name = new System.Text.StringBuilder(64);
             GetClassName(hwnd, name, name.Capacity);
-            if (name.ToString() == "#32770" && IsWindowVisible(hwnd) && !ClaimedDialogs.Contains(hwnd)) { found = hwnd; return false; }
+            if (name.ToString() == "#32770" && IsWindowVisible(hwnd) && GetProp(hwnd, ClaimProperty) == IntPtr.Zero) { found = hwnd; return false; }
             return true;
         }, IntPtr.Zero);
         return found;
@@ -130,6 +133,13 @@ internal static class Sta
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
     private static extern bool IsWindow(IntPtr hwnd);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool SetProp(IntPtr hwnd, string name, IntPtr data);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern IntPtr GetProp(IntPtr hwnd, string name);
 
     private delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
 
