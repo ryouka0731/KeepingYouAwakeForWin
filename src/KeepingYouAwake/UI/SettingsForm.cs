@@ -13,17 +13,20 @@ internal sealed class SettingsForm : Form
     private readonly ActivationDurationsController durations;
     private readonly UpdateService updates;
     private readonly ShellIntegration shell;
+    private readonly IUserPrompts prompts;
     private readonly List<Action> refreshers = [];
     /// <summary>The + buttons' popup menu, reused and disposed with the window.</summary>
     private readonly ContextMenuStrip popup = new();
     private bool refreshing;
 
-    public SettingsForm(SettingsStore store, ActivationDurationsController durations, UpdateService updates, ShellIntegration shell)
+    public SettingsForm(SettingsStore store, ActivationDurationsController durations, UpdateService updates,
+        ShellIntegration shell, IUserPrompts? prompts = null)
     {
         this.store = store;
         this.durations = durations;
         this.updates = updates;
         this.shell = shell;
+        this.prompts = prompts ?? WinFormsPrompts.Instance;
 
         Text = Strings.Get("SettingsTitle");
         Icon = TrayIcons.AppIcon();
@@ -96,7 +99,7 @@ internal sealed class SettingsForm : Form
             try { shell.SetStartAtLogin(startAtLogin.Checked); }
             catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or System.Security.SecurityException)
             {
-                MessageBox.Show(this, ex.Message, Strings.Get("AppName"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                prompts.Inform(this, ex.Message, Strings.Get("AppName"), MessageBoxIcon.Warning);
             }
             startAtLogin.Checked = shell.IsStartAtLoginEnabled;
         };
@@ -130,8 +133,11 @@ internal sealed class SettingsForm : Form
         remove.Name = "RemoveDuration";
         setDefault.Name = "SetDefaultDuration";
         var buttons = Ui.Row();
-        buttons.Controls.AddRange([Ui.Button(Strings.Get("Add"), (_, _) => AddDuration()), remove, setDefault,
-            Ui.Button(Strings.Get("ResetEllipsis"), (_, _) => ResetDurations())]);
+        var add = Ui.Button(Strings.Get("Add"), (_, _) => AddDuration());
+        add.Name = "AddDuration";
+        var reset = Ui.Button(Strings.Get("ResetEllipsis"), (_, _) => ResetDurations());
+        reset.Name = "ResetDurations";
+        buttons.Controls.AddRange([add, remove, setDefault, reset]);
         column.Controls.Add(buttons);
 
         void UpdateButtons()
@@ -165,19 +171,16 @@ internal sealed class SettingsForm : Form
 
     private void AddDuration()
     {
-        using var dialog = new AddDurationDialog();
-        if (dialog.ShowDialog(this) != DialogResult.OK || dialog.Duration is not { } duration) { return; }
+        if (prompts.AskDuration(this) is not { } duration) { return; }
         if (!durations.Add(duration))
         {
-            MessageBox.Show(this, Strings.Get("DurationAlreadyAdded"), Strings.Get("AddDuration"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+            prompts.Inform(this, Strings.Get("DurationAlreadyAdded"), Strings.Get("AddDuration"), MessageBoxIcon.Information);
         }
     }
 
     private void ResetDurations()
     {
-        var answer = MessageBox.Show(this, Strings.Get("ResetDurationsMessage"), Strings.Get("ResetDurationsTitle"),
-            MessageBoxButtons.OKCancel, MessageBoxIcon.Question);
-        if (answer == DialogResult.OK) { durations.Reset(); }
+        if (prompts.Confirm(this, Strings.Get("ResetDurationsMessage"), Strings.Get("ResetDurationsTitle"))) { durations.Reset(); }
     }
 
     #endregion
@@ -278,7 +281,7 @@ internal sealed class SettingsForm : Form
             case WiFiReadStatus.AccessDenied:
                 yield return new ToolStripMenuItem(Strings.Get("NetworkNameUnreadable")) { Enabled = false };
                 yield return new ToolStripMenuItem(Strings.Get("OpenLocationSettings"), null,
-                    (_, _) => ShellIntegration.OpenUrl("ms-settings:privacy-location"));
+                    (_, _) => prompts.OpenUrl("ms-settings:privacy-location"));
                 break;
             default:
                 yield return new ToolStripMenuItem(Strings.Get("NotConnectedToWiFi")) { Enabled = false };
@@ -287,8 +290,7 @@ internal sealed class SettingsForm : Form
         yield return new ToolStripSeparator();
         yield return new ToolStripMenuItem(Strings.Get("EnterNetworkName"), null, (_, _) =>
         {
-            using var prompt = new TextPromptDialog(Strings.Get("WatchedWiFi"), Strings.Get("NetworkName"));
-            if (prompt.ShowDialog(this) == DialogResult.OK) { wifi.Add(prompt.Value); }
+            if (prompts.AskText(this, Strings.Get("WatchedWiFi"), Strings.Get("NetworkName")) is { } name) { wifi.Add(name); }
         });
     }
 
@@ -299,29 +301,25 @@ internal sealed class SettingsForm : Form
         var apps = new WatchedListSection(this, "WatchedApplications", Strings.Get("WatchedApplications"), Strings.Get("WatchedApplicationsHint"),
             new ListBinding(s => s.WatchedApplications, (s, v) => s.WatchedApplications = v,
                 s => s.DisabledWatchedApplications, (s, v) => s.DisabledWatchedApplications = v));
-        apps.AddButton.Click += (_, _) => ShowMenu(apps.AddButton,
-        [
-            new ToolStripMenuItem(Strings.Get("ChooseApplicationFile"), null, (_, _) => ChooseApplicationFile(apps)),
-            new ToolStripMenuItem(Strings.Get("ChooseRunningApplication"), null, (_, _) =>
-            {
-                using var dialog = new RunningAppDialog();
-                if (dialog.ShowDialog(this) == DialogResult.OK && dialog.SelectedExecutable is { } exe) { apps.Add(exe); }
-            }),
-        ]);
+        apps.AddButton.Click += (_, _) => ShowMenu(apps.AddButton, ApplicationAddMenuItems(apps));
         ApplicationsSection = apps;
         return apps;
     }
 
-    private void ChooseApplicationFile(WatchedListSection apps)
-    {
-        using var dialog = new OpenFileDialog
+    /// <summary>The applications + menu: pick a program file or a running app.</summary>
+    internal IEnumerable<ToolStripItem> ApplicationAddMenuItems(WatchedListSection apps) =>
+    [
+        new ToolStripMenuItem(Strings.Get("ChooseApplicationFile"), null, (_, _) =>
         {
-            Title = Strings.Get("ChooseApplication"),
-            Filter = Strings.Get("ApplicationFilter"),
-            InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-        };
-        if (dialog.ShowDialog(this) == DialogResult.OK) { apps.Add(WatchedItems.NormalizeExecutableName(dialog.FileName)); }
-    }
+            var file = prompts.ChooseFile(this, Strings.Get("ChooseApplication"), Strings.Get("ApplicationFilter"),
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles));
+            if (file is not null) { apps.Add(WatchedItems.NormalizeExecutableName(file)); }
+        }),
+        new ToolStripMenuItem(Strings.Get("ChooseRunningApplication"), null, (_, _) =>
+        {
+            if (prompts.ChooseRunningApplication(this) is { } exe) { apps.Add(exe); }
+        }),
+    ];
 
     internal WatchedListSection DownloadsSection { get; private set; } = null!;
 
@@ -334,13 +332,10 @@ internal sealed class SettingsForm : Form
                 s => s.DisabledDownloadDirectories, (s, v) => s.DisabledDownloadDirectories = v));
         downloads.AddButton.Click += (_, _) =>
         {
-            using var dialog = new FolderBrowserDialog
+            if (prompts.ChooseFolder(this, Strings.Get("ChooseFolder"), WatchedItems.DefaultDownloadsFolder) is { } folder)
             {
-                Description = Strings.Get("ChooseFolder"),
-                UseDescriptionForTitle = true,
-                InitialDirectory = WatchedItems.DefaultDownloadsFolder,
-            };
-            if (dialog.ShowDialog(this) == DialogResult.OK) { downloads.Add(dialog.SelectedPath); }
+                downloads.Add(folder);
+            }
         };
         DownloadsSection = downloads;
         return downloads;
@@ -365,13 +360,13 @@ internal sealed class SettingsForm : Form
         buttons.Margin = new Padding(20, 0, 0, 0);
         buttons.Controls.AddRange(
         [
-            Ui.Button(Strings.Get("Add"), (_, _) => EditScheduleWindow(null)),
-            Ui.Button(Strings.Get("Edit"), (_, _) => { if (schedule.SelectedIndex >= 0) { EditScheduleWindow(schedule.SelectedIndex); } }),
-            Ui.Button(Strings.Get("Remove"), (_, _) =>
+            Named(Ui.Button(Strings.Get("Add"), (_, _) => EditScheduleWindow(null)), "AddActiveHours"),
+            Named(Ui.Button(Strings.Get("Edit"), (_, _) => { if (schedule.SelectedIndex >= 0) { EditScheduleWindow(schedule.SelectedIndex); } }), "EditActiveHours"),
+            Named(Ui.Button(Strings.Get("Remove"), (_, _) =>
             {
                 var index = schedule.SelectedIndex;
                 if (index >= 0) { Update(s => s.ScheduleWindows.RemoveAt(index)); }
-            }),
+            }), "RemoveActiveHours"),
         ]);
         column.Controls.Add(buttons);
         refreshers.Add(() =>
@@ -385,13 +380,19 @@ internal sealed class SettingsForm : Form
 
     private void EditScheduleWindow(int? index)
     {
-        using var dialog = new ScheduleWindowDialog(index is { } i ? store.Settings.ScheduleWindows[i] : null);
-        if (dialog.ShowDialog(this) != DialogResult.OK) { return; }
+        var edited = prompts.EditScheduleWindow(this, index is { } i ? store.Settings.ScheduleWindows[i] : null);
+        if (edited is null) { return; }
         Update(s =>
         {
-            if (index is { } at) { s.ScheduleWindows[at] = dialog.Window; }
-            else { s.ScheduleWindows.Add(dialog.Window); }
+            if (index is { } at) { s.ScheduleWindows[at] = edited; }
+            else { s.ScheduleWindows.Add(edited); }
         });
+    }
+
+    private static T Named<T>(T control, string name) where T : Control
+    {
+        control.Name = name;
+        return control;
     }
 
     /// <summary>Shows the popup menu below <paramref name="anchor"/>, replacing (and disposing) its previous items.</summary>
@@ -537,7 +538,7 @@ internal sealed class SettingsForm : Form
         var lastChecked = Ui.Text(string.Empty);
         lastChecked.Name = "LastChecked";
         Button? checkNow = null;
-        checkNow = Ui.Button(Strings.Get("CheckNow"), async (_, _) =>
+        checkNow = Named(Ui.Button(Strings.Get("CheckNow"), async (_, _) =>
         {
             checkNow!.Enabled = false;
             try { await CheckForUpdatesAsync(); }
@@ -545,7 +546,7 @@ internal sealed class SettingsForm : Form
             {
                 if (!IsDisposed) { checkNow.Enabled = true; }
             }
-        });
+        }), "CheckNow");
         column.Controls.Add(checkNow);
         column.Controls.Add(lastChecked);
         refreshers.Add(() => lastChecked.Text = store.Settings.LastUpdateCheck is { } last
@@ -554,24 +555,23 @@ internal sealed class SettingsForm : Form
         return column;
     }
 
-    private async Task CheckForUpdatesAsync()
+    internal async Task CheckForUpdatesAsync()
     {
         try
         {
             var release = await updates.CheckNowAsync();
             if (release is null)
             {
-                MessageBox.Show(this, Strings.Format("UpToDateFormat", UpdateService.CurrentVersion), Strings.Get("AppName"));
+                prompts.Inform(this, Strings.Format("UpToDateFormat", UpdateService.CurrentVersion), Strings.Get("AppName"));
                 return;
             }
-            var answer = MessageBox.Show(this, Strings.Format("UpdateAvailableFormat", release.Tag, UpdateService.CurrentVersion),
-                Strings.Get("UpdateAvailableTitle"), MessageBoxButtons.YesNo, MessageBoxIcon.Information);
-            if (answer == DialogResult.Yes) { ShellIntegration.OpenUrl(release.PageUrl); }
+            var open = prompts.Confirm(this, Strings.Format("UpdateAvailableFormat", release.Tag, UpdateService.CurrentVersion),
+                Strings.Get("UpdateAvailableTitle"));
+            if (open) { prompts.OpenUrl(release.PageUrl); }
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
-            MessageBox.Show(this, Strings.Format("UpdateCheckFailedFormat", ex.Message), Strings.Get("AppName"),
-                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            prompts.Inform(this, Strings.Format("UpdateCheckFailedFormat", ex.Message), Strings.Get("AppName"), MessageBoxIcon.Warning);
         }
     }
 
@@ -579,7 +579,7 @@ internal sealed class SettingsForm : Form
 
     #region About
 
-    private static Control BuildAbout()
+    private Control BuildAbout()
     {
         var column = Ui.Column(new Padding(20));
         using (var icon = TrayIcons.AppIcon())
@@ -600,8 +600,8 @@ internal sealed class SettingsForm : Form
         column.Controls.Add(Ui.Text(Strings.Get("AboutDescription")));
         column.Controls.Add(Ui.Text(Strings.Get("AboutCredits")));
         column.Controls.Add(Ui.Text("© 2014–2026 Marcel Dierkes · © 2026 ryouka0731"));
-        var link = new LinkLabel { Text = Strings.Get("OpenWebsite"), AutoSize = true, Margin = new Padding(0, 8, 0, 0) };
-        link.LinkClicked += (_, _) => ShellIntegration.OpenUrl(UpdateChecker.ProjectUrl);
+        var link = new LinkLabel { Name = "Website", Text = Strings.Get("OpenWebsite"), AutoSize = true, Margin = new Padding(0, 8, 0, 0) };
+        link.LinkClicked += (_, _) => prompts.OpenUrl(UpdateChecker.ProjectUrl);
         column.Controls.Add(link);
         return column;
     }

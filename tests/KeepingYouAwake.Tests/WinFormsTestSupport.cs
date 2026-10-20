@@ -58,6 +58,74 @@ internal static class Sta
         button.PerformClick();
     }
 
+    /// <summary>
+    /// Runs <paramref name="answer"/> on the next <typeparamref name="T"/> form once it is shown —
+    /// i.e. from inside its modal loop, so code calling <c>ShowDialog</c> can be tested.
+    /// </summary>
+    public static void WhenFormShown<T>(Action<T> answer) where T : Form =>
+        Poll(() =>
+        {
+            if (Application.OpenForms.OfType<T>().FirstOrDefault(f => f.Visible) is not { } form) { return false; }
+            answer(form);
+            return true;
+        });
+
+    public const int IdOk = 1;
+    public const int IdCancel = 2;
+
+    /// <summary>Presses <paramref name="buttonId"/> on the next native dialog of this thread (MessageBox, file / folder pickers).</summary>
+    public static void WhenNativeDialogShown(int buttonId) =>
+        Poll(() =>
+        {
+            IntPtr dialog = IntPtr.Zero;
+            EnumThreadWindows(GetCurrentThreadId(), (hwnd, _) =>
+            {
+                var name = new System.Text.StringBuilder(64);
+                GetClassName(hwnd, name, name.Capacity);
+                if (name.ToString() == "#32770" && IsWindowVisible(hwnd)) { dialog = hwnd; return false; }
+                return true;
+            }, IntPtr.Zero);
+            if (dialog == IntPtr.Zero) { return false; }
+            PostMessage(dialog, WmCommand, new IntPtr(buttonId), IntPtr.Zero);
+            return true;
+        });
+
+    /// <summary>Calls <paramref name="tick"/> on this thread every 20 ms (also inside modal loops) until it returns true.</summary>
+    private static void Poll(Func<bool> tick)
+    {
+        var timer = new System.Windows.Forms.Timer { Interval = 20 };
+        var deadline = Environment.TickCount64 + 15_000;
+        timer.Tick += (_, _) =>
+        {
+            if (!tick() && Environment.TickCount64 < deadline) { return; }
+            timer.Stop();
+            timer.Dispose();
+        };
+        timer.Start();
+    }
+
+    private const int WmCommand = 0x0111;
+
+    private delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool EnumThreadWindows(uint threadId, EnumWindowsProc callback, IntPtr lParam);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern int GetClassName(IntPtr hwnd, System.Text.StringBuilder name, int capacity);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool IsWindowVisible(IntPtr hwnd);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool PostMessage(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam);
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+
     /// <summary>Pumps messages for a fixed time.</summary>
     public static void Pump(int milliseconds = 100)
     {
@@ -90,13 +158,13 @@ internal sealed class TrayHarness : IDisposable
 {
     private readonly RegistrySandbox registry = new();
 
-    public TrayHarness(Action<AppSettings>? configure = null, HttpMessageHandler? updateHandler = null)
+    public TrayHarness(Action<AppSettings>? configure = null, HttpMessageHandler? updateHandler = null, IUserPrompts? prompts = null)
     {
         Fakes = new ControllerHarness(configure);
         // The harness's own controller isn't used; the tray builds one on the same fakes.
         Fakes.Controller.Dispose();
         Context = new TrayApplicationContext(Fakes.Store, Fakes.Log,
-            new TrayOptions(Platform, registry.Shell, BackgroundUpdateChecks: false, updateHandler ?? new FakeReleasesHandler("[]")));
+            new TrayOptions(Platform, registry.Shell, BackgroundUpdateChecks: false, updateHandler ?? new FakeReleasesHandler("[]"), prompts));
     }
 
     public ControllerHarness Fakes { get; }

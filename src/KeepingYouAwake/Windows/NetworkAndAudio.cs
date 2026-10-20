@@ -22,18 +22,39 @@ internal readonly record struct WiFiReading(WiFiReadStatus Status, IReadOnlyList
         : new(accessDenied ? WiFiReadStatus.AccessDenied : WiFiReadStatus.NotConnected, []);
 }
 
-/// <summary>Reads the joined Wi-Fi networks through the Native Wifi API.</summary>
-internal sealed class WlanWiFiProbe : IWiFiProbe
+/// <summary>The Native Wifi calls the probe needs, with native buffers already copied into managed memory.</summary>
+internal interface IWlanNative
 {
-    public IReadOnlyList<string> CurrentSsids() => Read().Ssids;
+    /// <summary>Opens a client handle; false when the WLAN service is unavailable.</summary>
+    bool TryOpen(out IntPtr client);
 
-    public static WiFiReading Read()
+    void Close(IntPtr client);
+
+    /// <summary>The <c>WLAN_INTERFACE_INFO_LIST</c>, or null when enumeration fails.</summary>
+    byte[]? EnumerateInterfaces(IntPtr client);
+
+    /// <summary>The Win32 result and, on success, the <c>WLAN_CONNECTION_ATTRIBUTES</c> of an interface.</summary>
+    (int Result, byte[]? Attributes) QueryCurrentConnection(IntPtr client, Guid interfaceGuid);
+}
+
+/// <summary>Reads the joined Wi-Fi networks through the Native Wifi API.</summary>
+internal sealed class WlanWiFiProbe(IWlanNative? native = null) : IWiFiProbe
+{
+    private static readonly WiFiReading Unavailable = new(WiFiReadStatus.Unavailable, []);
+    private readonly IWlanNative native = native ?? new WlanNative();
+
+    public IReadOnlyList<string> CurrentSsids() => ReadNow().Ssids;
+
+    /// <summary>Reads with the real API.</summary>
+    public static WiFiReading Read() => new WlanWiFiProbe().ReadNow();
+
+    public WiFiReading ReadNow()
     {
         try
         {
-            if (WlanOpenHandle(2, IntPtr.Zero, out _, out var client) != 0) { return Unavailable; }
+            if (!native.TryOpen(out var client)) { return Unavailable; }
             try { return ReadInterfaces(client); }
-            finally { WlanCloseHandle(client, IntPtr.Zero); }
+            finally { native.Close(client); }
         }
         catch (DllNotFoundException)
         {
@@ -41,44 +62,49 @@ internal sealed class WlanWiFiProbe : IWiFiProbe
         }
     }
 
-    private static readonly WiFiReading Unavailable = new(WiFiReadStatus.Unavailable, []);
-
-    private static WiFiReading ReadInterfaces(IntPtr client)
+    private WiFiReading ReadInterfaces(IntPtr client)
     {
-        if (WlanEnumInterfaces(client, IntPtr.Zero, out var list) != 0) { return Unavailable; }
-        IReadOnlyList<(Guid Interface, bool Connected)> interfaces;
-        try
-        {
-            var count = Marshal.ReadInt32(list);
-            interfaces = WindowsDecoding.ParseWlanInterfaceList(
-                Copy(list, WindowsDecoding.WlanInterfaceListHeaderSize + count * WindowsDecoding.WlanInterfaceInfoSize));
-        }
-        finally { WlanFreeMemory(list); }
+        if (native.EnumerateInterfaces(client) is not { } list) { return Unavailable; }
+        var interfaces = WindowsDecoding.ParseWlanInterfaceList(list);
         if (interfaces.Count == 0) { return Unavailable; }
 
         var ssids = new List<string>();
         var denied = false;
         foreach (var (guid, _) in interfaces.Where(i => i.Connected))
         {
-            var ssid = QuerySsid(client, guid, out var accessDenied);
-            denied |= accessDenied;
+            var (result, attributes) = native.QueryCurrentConnection(client, guid);
+            var ssid = result == 0 && attributes is not null ? WindowsDecoding.ParseConnectionSsid(attributes) : null;
+            // Access denied, or a redacted (empty) SSID: Windows hides the name from this app.
+            denied |= result == ErrorAccessDenied || (result == 0 && ssid is null);
             if (ssid is not null) { ssids.Add(ssid); }
         }
         return WiFiReading.From(ssids, denied);
     }
+}
 
-    /// <summary>The SSID of a connected interface; null with <paramref name="accessDenied"/> when Windows hides it.</summary>
-    private static string? QuerySsid(IntPtr client, Guid interfaceGuid, out bool accessDenied)
+/// <summary><see cref="IWlanNative"/> over wlanapi.dll.</summary>
+internal sealed class WlanNative : IWlanNative
+{
+    public bool TryOpen(out IntPtr client) => WlanOpenHandle(2, IntPtr.Zero, out _, out client) == 0;
+
+    public void Close(IntPtr client) => WlanCloseHandle(client, IntPtr.Zero);
+
+    public byte[]? EnumerateInterfaces(IntPtr client)
     {
-        var result = WlanQueryInterface(client, ref interfaceGuid, WlanIntfOpcodeCurrentConnection, IntPtr.Zero, out var size, out var data, out _);
-        accessDenied = result == ErrorAccessDenied;
-        if (result != 0) { return null; }
+        if (WlanEnumInterfaces(client, IntPtr.Zero, out var list) != 0) { return null; }
         try
         {
-            var ssid = WindowsDecoding.ParseConnectionSsid(Copy(data, (int)size));
-            accessDenied |= ssid is null; // redacted
-            return ssid;
+            var count = Marshal.ReadInt32(list);
+            return Copy(list, WindowsDecoding.WlanInterfaceListHeaderSize + count * WindowsDecoding.WlanInterfaceInfoSize);
         }
+        finally { WlanFreeMemory(list); }
+    }
+
+    public (int Result, byte[]? Attributes) QueryCurrentConnection(IntPtr client, Guid interfaceGuid)
+    {
+        var result = WlanQueryInterface(client, ref interfaceGuid, WlanIntfOpcodeCurrentConnection, IntPtr.Zero, out var size, out var data, out _);
+        if (result != 0) { return (result, null); }
+        try { return (0, Copy(data, (int)size)); }
         finally { WlanFreeMemory(data); }
     }
 
@@ -90,10 +116,40 @@ internal sealed class WlanWiFiProbe : IWiFiProbe
     }
 }
 
-/// <summary>Classifies the default playback device through Core Audio (MMDevice API).</summary>
-internal sealed class CoreAudioProbe : IAudioOutputProbe
+/// <summary>The default playback endpoint's identifying properties.</summary>
+internal sealed record AudioEndpointInfo(string? EnumeratorName, uint? FormFactor);
+
+internal interface IAudioEndpointReader
 {
+    /// <summary>The default playback endpoint; null when there is none. Throws <see cref="COMException"/> on failure.</summary>
+    AudioEndpointInfo? ReadDefaultPlayback();
+}
+
+/// <summary>Classifies the default playback device.</summary>
+internal sealed class CoreAudioProbe(IAudioEndpointReader? reader = null) : IAudioOutputProbe
+{
+    private readonly IAudioEndpointReader reader = reader ?? new CoreAudioEndpointReader();
+
     public bool? IsDefaultOutputExternal()
+    {
+        try
+        {
+            return reader.ReadDefaultPlayback() is { } endpoint
+                && WindowsDecoding.IsExternalAudioEndpoint(endpoint.EnumeratorName, endpoint.FormFactor);
+        }
+        catch (COMException)
+        {
+            return null; // the state can't be read
+        }
+    }
+}
+
+/// <summary><see cref="IAudioEndpointReader"/> over Core Audio (MMDevice API).</summary>
+internal sealed class CoreAudioEndpointReader : IAudioEndpointReader
+{
+    private const int ElementNotFound = unchecked((int)0x80070490); // E_NOTFOUND: no endpoint of that kind
+
+    public AudioEndpointInfo? ReadDefaultPlayback()
     {
         IMMDeviceEnumerator? enumerator = null;
         IMMDevice? device = null;
@@ -101,18 +157,13 @@ internal sealed class CoreAudioProbe : IAudioOutputProbe
         try
         {
             enumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
-            if (enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia, out device) != 0 || device is null)
-            {
-                return false; // no playback device at all
-            }
-            if (device.OpenPropertyStore(0, out store) != 0 || store is null) { return null; }
-            return WindowsDecoding.IsExternalAudioEndpoint(
-                ReadString(store, PropertyKeys.DeviceEnumeratorName),
-                ReadUInt(store, PropertyKeys.AudioEndpointFormFactor));
-        }
-        catch (COMException)
-        {
-            return null;
+            var result = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia, out device);
+            if (result == ElementNotFound || (result == 0 && device is null)) { return null; }
+            Marshal.ThrowExceptionForHR(result);
+            Marshal.ThrowExceptionForHR(device!.OpenPropertyStore(0, out store));
+            return new AudioEndpointInfo(
+                ReadString(store!, PropertyKeys.DeviceEnumeratorName),
+                ReadUInt(store!, PropertyKeys.AudioEndpointFormFactor));
         }
         finally
         {
