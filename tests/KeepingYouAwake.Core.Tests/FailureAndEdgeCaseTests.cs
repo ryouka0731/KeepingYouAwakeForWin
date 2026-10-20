@@ -5,7 +5,7 @@ namespace KeepingYouAwake.Core.Tests;
 /// <summary>Write failures, asynchronous I/O and lifecycle edges that the happy-path tests don't reach.</summary>
 public class FailureAndEdgeCaseTests : IDisposable
 {
-    private readonly string dir = Path.Combine(Path.GetTempPath(), "kya-edge-" + Guid.NewGuid().ToString("N"));
+    private readonly string dir = Path.Join(Path.GetTempPath(), "kya-edge-" + Guid.NewGuid().ToString("N"));
     private DateTimeOffset now = new(2026, 10, 21, 12, 0, 0, TimeSpan.Zero);
 
     public FailureAndEdgeCaseTests() => Directory.CreateDirectory(dir);
@@ -19,7 +19,7 @@ public class FailureAndEdgeCaseTests : IDisposable
         Directory.Delete(dir, recursive: true);
     }
 
-    private string LogPath => Path.Combine(dir, "activity.jsonl");
+    private string LogPath => Path.Join(dir, "activity.jsonl");
 
     /// <summary>Blocks the logger's atomic write: a directory where its temp file must go.</summary>
     private IDisposable BlockLogWrites()
@@ -108,9 +108,9 @@ public class FailureAndEdgeCaseTests : IDisposable
     [Fact]
     public void SettingsSaveFailureKeepsSettingsInMemory()
     {
-        var blockedParent = Path.Combine(dir, "not-a-directory");
+        var blockedParent = Path.Join(dir, "not-a-directory");
         File.WriteAllText(blockedParent, "x");
-        var store = new SettingsStore(Path.Combine(blockedParent, "settings.json"));
+        var store = new SettingsStore(Path.Join(blockedParent, "settings.json"));
         store.Update(s => s.MouseJiggler = true);
         Assert.True(store.Settings.MouseJiggler);
         Assert.False(store.ReloadFromDisk());
@@ -122,16 +122,16 @@ public class FailureAndEdgeCaseTests : IDisposable
     {
         var scheduler = new FakeScheduler();
         var drives = new FakeDriveEnumerator();
-        var external = Directory.CreateDirectory(Path.Combine(dir, "ext")).FullName;
+        var external = Directory.CreateDirectory(Path.Join(dir, "ext")).FullName;
         drives.Roots.Add(external);
-        drives.Roots.Add(Path.Combine(dir, "gone")); // ejected drive: write fails quietly
-        var timer = new DriveAliveTimer(scheduler, drives, dir) { Interval = TimeSpan.FromSeconds(30) };
+        drives.Roots.Add(Path.Join(dir, "gone")); // ejected drive: write fails quietly
+        using var timer = new DriveAliveTimer(scheduler, drives, dir) { Interval = TimeSpan.FromSeconds(30) };
 
         timer.Start();
         timer.Start(); // idempotent
         scheduler.Advance(TimeSpan.FromSeconds(30));
         timer.Flush(TimeSpan.FromSeconds(5));
-        var ping = Path.Combine(external, DriveAliveTimer.PingFileName);
+        var ping = Path.Join(external, DriveAliveTimer.PingFileName);
         Assert.True(File.Exists(ping));
 
         timer.Dispose();
@@ -146,9 +146,9 @@ public class FailureAndEdgeCaseTests : IDisposable
     {
         var drives = new FakeDriveEnumerator();
         drives.Roots.Add(dir);
-        var timer = new DriveAliveTimer(new FakeScheduler(), drives, dir, runInline: true);
+        using var timer = new DriveAliveTimer(new FakeScheduler(), drives, dir, runInline: true);
         timer.Start();
-        var ping = Path.Combine(dir, DriveAliveTimer.PingFileName);
+        var ping = Path.Join(dir, DriveAliveTimer.PingFileName);
         File.SetAttributes(ping, FileAttributes.Normal); // Windows refuses to overwrite hidden files
         File.WriteAllText(ping, DriveAliveTimer.ContentPrefix + "someone-else 2026\n");
         timer.Stop();
@@ -158,10 +158,10 @@ public class FailureAndEdgeCaseTests : IDisposable
     [Fact]
     public void ReadHeadHandlesMissingAndLinkedPaths()
     {
-        Assert.Null(DriveAliveTimer.ReadHead(Path.Combine(dir, "missing")));
-        var target = Path.Combine(dir, "target");
+        Assert.Null(DriveAliveTimer.ReadHead(Path.Join(dir, "missing")));
+        var target = Path.Join(dir, "target");
         File.WriteAllText(target, "keepingyouawake x");
-        var link = Path.Combine(dir, "link");
+        var link = Path.Join(dir, "link");
         try { File.CreateSymbolicLink(link, target); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return; } // no symlink privilege
         Assert.Null(DriveAliveTimer.ReadHead(link));
@@ -195,7 +195,7 @@ public class FailureAndEdgeCaseTests : IDisposable
     public void DiskKeepAliveFollowsBothSettings()
     {
         using var h = new ControllerHarness(s => s.PreventDiskSleep = true);
-        var external = Directory.CreateDirectory(Path.Combine(dir, "ext2")).FullName;
+        var external = Directory.CreateDirectory(Path.Join(dir, "ext2")).FullName;
         h.Drives.Roots.Add(external);
         h.Controller.Start();
         h.Controller.Activate(null);
@@ -238,7 +238,7 @@ public class FailureAndEdgeCaseTests : IDisposable
     [Fact]
     public void DownloadMonitorSkipsBlankDirectoriesAndStopsCleanly()
     {
-        var monitor = new DownloadActivityMonitor(new FakeScheduler());
+        using var monitor = new DownloadActivityMonitor(new FakeScheduler());
         monitor.SetDirectories(["  ", dir]);
         Assert.False(monitor.HasInProgressDownload());
         monitor.Start();
@@ -251,7 +251,7 @@ public class FailureAndEdgeCaseTests : IDisposable
     public void ScheduleMonitorWithNoWindowsAndRestart()
     {
         var scheduler = new FakeScheduler();
-        var monitor = new ScheduleMonitor(scheduler, _ => new DateTime(2026, 10, 19, 10, 0, 0)); // a Monday
+        using var monitor = new ScheduleMonitor(scheduler, _ => new DateTime(2026, 10, 19, 10, 0, 0)); // a Monday
         var entered = 0;
         monitor.Entered += (_, _) => entered++;
         monitor.Start();
@@ -290,7 +290,7 @@ public class FailureAndEdgeCaseTests : IDisposable
         jiggler.Start();
         Assert.Equal(1, nudger.Count);
 
-        var cpu = new CpuLoadMonitor(scheduler, new NullSampler());
+        using var cpu = new CpuLoadMonitor(scheduler, new NullSampler());
         cpu.Start();
         cpu.Start();
         scheduler.Advance(TimeSpan.FromSeconds(20));

@@ -14,7 +14,10 @@ internal sealed class UpdateService : IDisposable
     private readonly Timer timer = new() { Interval = (int)TimeSpan.FromHours(1).TotalMilliseconds };
     private Task<ReleaseInfo?>? inFlight;
 
+    /// <summary>Creates the service; nothing is checked until <see cref="StartBackgroundChecks"/> or <see cref="CheckNowAsync"/>.</summary>
+    /// <param name="store">Settings holding the automatic-check switches and the last check time.</param>
     /// <param name="handler">HTTP handler (tests); null for the default network stack.</param>
+    /// <param name="repository"><c>owner/name</c> of the GitHub repository to query.</param>
     public UpdateService(SettingsStore store, HttpMessageHandler? handler = null, string repository = UpdateChecker.DefaultRepository)
     {
         this.store = store;

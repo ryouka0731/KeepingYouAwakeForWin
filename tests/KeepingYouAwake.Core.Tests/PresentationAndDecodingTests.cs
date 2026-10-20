@@ -213,8 +213,8 @@ public class UpdateCheckerApiTests
     [Fact]
     public async Task QueriesTheReleasesApiWithGitHubHeaders()
     {
-        var handler = new StubHandler(HttpStatusCode.OK, """[{"tag_name":"v2.0.0","html_url":"https://x/2"}]""");
-        using var http = new HttpClient(handler);
+        using var handler = new StubHandler(HttpStatusCode.OK, """[{"tag_name":"v2.0.0","html_url":"https://x/2"}]""");
+        using var http = new HttpClient(handler, disposeHandler: false);
         var release = await new UpdateChecker(http, "owner/repo").FindUpdateAsync("1.0.0", includePreReleases: false);
 
         Assert.Equal("v2.0.0", release!.Tag);
@@ -226,15 +226,16 @@ public class UpdateCheckerApiTests
     [Fact]
     public async Task HttpErrorsSurfaceAsExceptions()
     {
-        using var http = new HttpClient(new StubHandler(HttpStatusCode.Forbidden, "rate limited"));
+        using var handler = new StubHandler(HttpStatusCode.Forbidden, "rate limited");
+        using var http = new HttpClient(handler, disposeHandler: false);
         await Assert.ThrowsAsync<HttpRequestException>(() => new UpdateChecker(http).FindUpdateAsync("1.0.0", false));
     }
 
     [Fact]
     public async Task UnparsableCurrentVersionStillSendsAValidUserAgent()
     {
-        var handler = new StubHandler(HttpStatusCode.OK, "[]");
-        using var http = new HttpClient(handler);
+        using var handler = new StubHandler(HttpStatusCode.OK, "[]");
+        using var http = new HttpClient(handler, disposeHandler: false);
         Assert.Null(await new UpdateChecker(http).FindUpdateAsync("dev-build", false));
         Assert.Equal("KeepingYouAwake/0", handler.Request!.Headers.UserAgent.ToString());
     }
@@ -304,10 +305,10 @@ public class SmallHelperTests
     [Fact]
     public void DataDirectoryOverride()
     {
-        var appData = Path.Combine(Path.GetTempPath(), "appdata");
-        Assert.Equal(Path.Combine(appData, "KeepingYouAwake"), AppPaths.ResolveDataDirectory(null, appData));
-        Assert.Equal(Path.Combine(appData, "KeepingYouAwake"), AppPaths.ResolveDataDirectory("  ", appData));
-        var custom = Path.Combine(Path.GetTempPath(), "kya-data");
+        var appData = Path.Join(Path.GetTempPath(), "appdata");
+        Assert.Equal(Path.Join(appData, "KeepingYouAwake"), AppPaths.ResolveDataDirectory(null, appData));
+        Assert.Equal(Path.Join(appData, "KeepingYouAwake"), AppPaths.ResolveDataDirectory("  ", appData));
+        var custom = Path.Join(Path.GetTempPath(), "kya-data");
         Assert.Equal(Path.GetFullPath(custom), AppPaths.ResolveDataDirectory($" {custom} ", appData));
         Assert.EndsWith("KeepingYouAwake", AppPaths.DataDirectory);
         Assert.EndsWith("settings.json", SettingsStore.DefaultFilePath);

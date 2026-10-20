@@ -154,11 +154,11 @@ public class TrayIntegrationTests
     public void RealWindowsServicesStartAndStop() => Sta.Run(() =>
     {
         using var registry = new RegistrySandbox();
-        var dir = Path.Combine(Path.GetTempPath(), "kya-real-" + Guid.NewGuid().ToString("N"));
+        var dir = Path.Join(Path.GetTempPath(), "kya-real-" + Guid.NewGuid().ToString("N"));
         try
         {
-            var store = new SettingsStore(Path.Combine(dir, "settings.json"));
-            var log = new ActivityLogger(Path.Combine(dir, "activity.jsonl"));
+            var store = new SettingsStore(Path.Join(dir, "settings.json"));
+            var log = new ActivityLogger(Path.Join(dir, "activity.jsonl"));
             using var tray = new TrayApplicationContext(store, log, new TrayOptions(Shell: registry.Shell, BackgroundUpdateChecks: false));
             tray.Controller.Activate(TimeSpan.FromMinutes(1));
             Assert.True(tray.Controller.IsActive);
@@ -176,13 +176,13 @@ public class TrayIntegrationTests
     public void OutsideEditsOfSettingsJsonAreApplied() => Sta.Run(() =>
     {
         using var registry = new RegistrySandbox();
-        var dir = Path.Combine(Path.GetTempPath(), "kya-watch-" + Guid.NewGuid().ToString("N"));
+        var dir = Path.Join(Path.GetTempPath(), "kya-watch-" + Guid.NewGuid().ToString("N"));
         try
         {
-            var path = Path.Combine(dir, "settings.json");
+            var path = Path.Join(dir, "settings.json");
             var store = new SettingsStore(path);
             store.Update(s => s.ShowNotifications = true);
-            using var tray = new TrayApplicationContext(store, new ActivityLogger(Path.Combine(dir, "a.jsonl")),
+            using var tray = new TrayApplicationContext(store, new ActivityLogger(Path.Join(dir, "a.jsonl")),
                 new TrayOptions(Shell: registry.Shell, BackgroundUpdateChecks: false));
 
             File.WriteAllText(path, File.ReadAllText(path).Replace("\"mouseJiggler\": false", "\"mouseJiggler\": true"));

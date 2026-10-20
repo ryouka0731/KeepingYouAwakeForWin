@@ -39,7 +39,7 @@ public sealed class UpdateChecker(HttpClient http, string repository = UpdateChe
             .Select(ParseRelease)
             .OfType<ReleaseInfo>()
             .Where(r => includePreReleases || !r.IsPreRelease)
-            .Aggregate((ReleaseInfo?)null, (newest, r) => newest is null || IsNewer(r, newest) ? r : newest);
+            .Aggregate(default(ReleaseInfo), (newest, r) => newest is null || IsNewer(r, newest) ? r : newest);
 
         if (best is null) { return null; }
         return Compare(best.Version, best.PreReleaseLabel, currentVersion.Value.Version, currentVersion.Value.Label) > 0 ? best : null;

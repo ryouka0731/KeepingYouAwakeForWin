@@ -14,6 +14,8 @@ internal sealed class SettingsForm : Form
     private readonly UpdateService updates;
     private readonly ShellIntegration shell;
     private readonly List<Action> refreshers = [];
+    /// <summary>The + buttons' popup menu, reused and disposed with the window.</summary>
+    private readonly ContextMenuStrip popup = new();
     private bool refreshing;
 
     public SettingsForm(SettingsStore store, ActivationDurationsController durations, UpdateService updates, ShellIntegration shell)
@@ -393,13 +395,19 @@ internal sealed class SettingsForm : Form
         });
     }
 
-    /// <summary>Shows a popup menu below <paramref name="anchor"/>; it disposes itself once closed.</summary>
+    /// <summary>Shows the popup menu below <paramref name="anchor"/>, replacing (and disposing) its previous items.</summary>
     private void ShowMenu(Control anchor, IEnumerable<ToolStripItem> items)
     {
-        var menu = new ContextMenuStrip();
-        menu.Items.AddRange(items.ToArray());
-        menu.Closed += (_, _) => BeginInvoke(menu.Dispose);
-        menu.Show(anchor, new Point(0, anchor.Height));
+        foreach (var old in popup.Items.Cast<ToolStripItem>().ToList()) { old.Dispose(); }
+        popup.Items.Clear();
+        popup.Items.AddRange(items.ToArray());
+        popup.Show(anchor, new Point(0, anchor.Height));
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) { popup.Dispose(); }
+        base.Dispose(disposing);
     }
 
     /// <summary>How a watched list maps to its item list and its switched-off list in the settings.</summary>

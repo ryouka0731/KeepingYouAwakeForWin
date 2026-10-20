@@ -243,6 +243,6 @@ public static class AppPaths
 
     internal static string ResolveDataDirectory(string? overrideDirectory, string applicationData) =>
         string.IsNullOrWhiteSpace(overrideDirectory)
-            ? Path.Combine(applicationData, "KeepingYouAwake")
+            ? Path.Join(applicationData, "KeepingYouAwake")
             : Path.GetFullPath(Environment.ExpandEnvironmentVariables(overrideDirectory.Trim()));
 }

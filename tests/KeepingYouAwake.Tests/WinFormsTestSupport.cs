@@ -19,10 +19,11 @@ internal static class Sta
         ExceptionDispatchInfo? failure = null;
         var thread = new Thread(() =>
         {
-            SynchronizationContext.SetSynchronizationContext(new WindowsFormsSynchronizationContext());
+            using var context = new WindowsFormsSynchronizationContext();
+            SynchronizationContext.SetSynchronizationContext(context);
             UiThread.Capture();
             try { body(); }
-            catch (Exception e) { failure = ExceptionDispatchInfo.Capture(e); }
+            catch (Exception e) { failure = ExceptionDispatchInfo.Capture(e); } // rethrown on the test thread
         });
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
