@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SignPath artifact configuration for the release workflow's "unsigned" artifact
+  (the GitHub artifact zip holds win-x64/ and win-arm64/). Paste this into the
+  SignPath project's artifact configuration. The metadata restrictions make
+  SignPath refuse anything that isn't this project's executable at the released
+  version. `version` comes from the workflow's `parameters` input.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" />
+  </parameters>
+  <zip-file>
+    <pe-file path="win-x64/KeepingYouAwake.exe" product-name="KeepingYouAwake for Windows" product-version="${version}">
+      <authenticode-sign />
+    </pe-file>
+    <pe-file path="win-arm64/KeepingYouAwake.exe" product-name="KeepingYouAwake for Windows" product-version="${version}">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

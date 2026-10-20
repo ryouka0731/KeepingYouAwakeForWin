@@ -28,6 +28,7 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write   # needed for `gh release create/upload`
+      actions: read     # SignPath reads this run's job details and artifact
     steps:
       - name: Resolve tag
         id: tag
@@ -65,14 +66,99 @@ jobs:
         env:
           VERSION: ${{ steps.tag.outputs.version }}
         run: |
-          New-Item -ItemType Directory -Force dist | Out-Null
           foreach ($rid in 'win-x64', 'win-arm64') {
             dotnet publish src/KeepingYouAwake -c Release -r $rid --self-contained `
               -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
-              -p:Version=$env:VERSION -o "publish/$rid"
-            Copy-Item LICENSE "publish/$rid/LICENSE.txt"
+              -p:Version=$env:VERSION -p:IncludeSourceRevisionInInformationalVersion=false `
+              -o "unsigned/$rid"
+          }
+          Get-ChildItem -Recurse unsigned -Filter *.exe
+
+      # Code signing through SignPath Foundation (free for open source). Runs only
+      # once the SIGNPATH_API_TOKEN secret is configured; until then releases are
+      # unsigned. SignPath verifies the artifact came from this workflow run, and
+      # every request waits for manual approval in SignPath. Configuration:
+      # .signpath/README.md.
+      - name: Check for SignPath configuration
+        id: signpath
+        shell: bash
+        # Only the true/false result of the secret comparison reaches the script.
+        # Signing also requires the run to be on the tag itself (tag push, or
+        # "Run workflow" with the tag selected), so a branch's workflow file can
+        # never get a binary signed.
+        env:
+          HAS_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
+          ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          if [ "${HAS_TOKEN}" != "true" ]; then
+            echo "SignPath not configured: publishing unsigned executables."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${REF_TYPE}" != "tag" ] || [ "${REF_NAME}" != "${TAG}" ]; then
+            echo "::error::Signed releases must run on the tag ref (got ${REF_TYPE} '${REF_NAME}', tag '${TAG}'). Use 'Run workflow' with the tag selected under 'Use workflow from'."
+            exit 1
+          fi
+          if [ -z "${ORGANIZATION_ID}" ]; then
+            echo "::error::SIGNPATH_API_TOKEN is set but the SIGNPATH_ORGANIZATION_ID variable is not. See .signpath/README.md."
+            exit 1
+          fi
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+
+      - name: Upload unsigned executables
+        id: upload-unsigned
+        if: steps.signpath.outputs.enabled == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: unsigned
+          # Only the executables (no .pdb); the zip keeps win-x64/ and win-arm64/.
+          path: unsigned/*/KeepingYouAwake.exe
+          if-no-files-found: error
+          # "Re-run failed jobs" after a SignPath timeout reuploads it.
+          overwrite: true
+
+      - name: Sign with SignPath
+        if: steps.signpath.outputs.enabled == 'true'
+        uses: SignPath/github-action-submit-signing-request@c92b958760219087e01f8d67a1669ed57afe2627 # v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'KeepingYouAwakeForWin' }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG || 'initial' }}
+          github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
+          parameters: |
+            version: ${{ toJSON(steps.tag.outputs.version) }}
+          # Leaves time for an approver to approve the request in SignPath.
+          wait-for-completion-timeout-in-seconds: 7200
+          output-artifact-directory: signed
+
+      - name: Package
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+          SIGNED: ${{ steps.signpath.outputs.enabled }}
+        run: |
+          $source = if ($env:SIGNED -eq 'true') { 'signed' } else { 'unsigned' }
+          if (-not (Test-Path $source)) { throw "expected $source executables, found none" }
+          Write-Host "Packaging $source executables"
+          New-Item -ItemType Directory -Force dist | Out-Null
+          foreach ($rid in 'win-x64', 'win-arm64') {
+            $exe = "$source/$rid/KeepingYouAwake.exe"
+            if (-not (Test-Path $exe)) { throw "missing $exe" }
+            if ($source -eq 'signed') {
+              $signature = Get-AuthenticodeSignature $exe
+              if ($signature.Status -ne 'Valid') { throw "$exe signature is $($signature.Status)" }
+              Write-Host "$rid signed by $($signature.SignerCertificate.Subject)"
+            }
+            New-Item -ItemType Directory -Force "package/$rid" | Out-Null
+            Copy-Item $exe "package/$rid/KeepingYouAwake.exe"
+            Copy-Item LICENSE "package/$rid/LICENSE.txt"
             $zip = "dist/KeepingYouAwake-$env:VERSION-$rid.zip"
-            Compress-Archive -Path "publish/$rid/KeepingYouAwake.exe", "publish/$rid/LICENSE.txt" -DestinationPath $zip
+            Compress-Archive -Path "package/$rid/*" -DestinationPath $zip
             (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower() + "  " + (Split-Path $zip -Leaf) | Out-File "$zip.sha256" -Encoding ascii
           }
           Get-ChildItem dist

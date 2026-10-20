@@ -34,7 +34,7 @@ Marcel Dierkes 氏の macOS アプリ [KeepingYouAwake](https://github.com/newma
 
 [Releases](https://github.com/ryouka0731/KeepingYouAwakeForWin/releases) から `KeepingYouAwake-<version>-win-x64.zip`（ARM 版 PC は `-win-arm64.zip`）をダウンロードし、好きな場所（例: `%LOCALAPPDATA%\Programs\KeepingYouAwake`）に展開して `KeepingYouAwake.exe` を起動します。単一の実行ファイルで、インストーラーも .NET ランタイムも不要です。各 zip には `.sha256` が付いています。
 
-コード署名はしていないため、初回起動時に SmartScreen の警告が出ることがあります。**詳細情報 → 実行** を選んでください。
+署名付きのリリースは SignPath Foundation の証明書で署名されています（[コード署名ポリシー](#コード署名ポリシー-code-signing-policy)）。`KeepingYouAwake.exe` を右クリック → **プロパティ → デジタル署名** で確認できます。署名を導入する前に公開した最初のリリースは未署名です。新しいファイルや未署名のファイルには SmartScreen の警告が出ることがあるので、その場合は **詳細情報 → 実行** を選んでください。
 
 サインイン時に自動起動するには **設定 → 一般 → ログイン時に起動** をオンにします。カップのアイコンを隠れたアイコン領域からタスクバーへドラッグしておくと常に見えて便利です。
 
@@ -88,6 +88,19 @@ KeepingYouAwake.exe --toggle
 - Drive Alive はシステム以外のすべてのローカルドライブを対象にします（Windows では内蔵と外付けの固定ドライブを確実に区別できないため）。
 - AppleScript / ショートカットの代わりに、URL スキーム・コマンドライン引数・CLI・MCP サーバーを使います。
 - アップデートは GitHub Releases を確認してダウンロードページを開きます（自動で置き換えはしません）。
+
+## コード署名ポリシー (Code signing policy)
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).（SignPath.io による無償のコード署名。証明書は SignPath Foundation が発行）
+
+- コミッター・レビュアー: [ryouka0731](https://github.com/ryouka0731)
+- 承認者: [ryouka0731](https://github.com/ryouka0731)
+
+署名するのは、このリポジトリの[リリースワークフロー](.github/workflows/release.yml)がタグ付きコミットからビルドした実行ファイルだけです。署名リクエストは毎回手動で承認します。
+
+### プライバシーポリシー
+
+このプログラムは、ユーザー（またはインストール・運用する人）が明示的に求めない限り、ほかのネットワーク上のシステムに情報を送信しません。例外は 1 つだけです。**設定 → アップデート** でオフにしない限り、新しいバージョンを知らせるために GitHub（`api.github.com`）へこのプロジェクトのリリース一覧を問い合わせます。起動の少し後に 1 回、その後は確認に成功してから最短 1 日おきです（オフラインなどで失敗している間は 1 時間おきに再試行します）。この通信には、通常の HTTPS 通信で伝わる情報（IP アドレス、User-Agent に含まれるアプリのバージョン）以外の個人情報は含まれず、GitHub の[プライバシーステートメント](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement)が適用されます。設定とアクティビティログは PC の外に出ません。
 
 ## ライセンス
 

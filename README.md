@@ -34,7 +34,7 @@ Every watched item has a checkbox to pause it without removing it. A trigger onl
 
 Download `KeepingYouAwake-<version>-win-x64.zip` (or `-win-arm64.zip`) from the [Releases page](https://github.com/ryouka0731/KeepingYouAwakeForWin/releases), unzip it anywhere (for example `%LOCALAPPDATA%\Programs\KeepingYouAwake`) and run `KeepingYouAwake.exe`. It is a single self-contained executable; no installer and no .NET runtime are needed. Each zip has a `.sha256` next to it.
 
-The executable is not code-signed, so SmartScreen may warn on first launch: choose **More info → Run anyway**.
+Signed releases are signed by SignPath Foundation (see [Code signing policy](#code-signing-policy)): right-click `KeepingYouAwake.exe` → **Properties → Digital Signatures** to check. The first releases, published before signing was set up, are unsigned. SmartScreen may still warn about a new or unsigned download: choose **More info → Run anyway**.
 
 Turn on **Settings → General → Start at Login** to start it when you sign in. Tip: drag the cup out of the hidden-icons area onto the taskbar to keep it visible.
 
@@ -88,6 +88,19 @@ Settings live in `%APPDATA%\KeepingYouAwake\settings.json`, the activity log nex
 - Drive Alive keeps every non-system local drive spinning (Windows doesn't reliably tell internal from external fixed drives).
 - No AppleScript / Shortcuts; use the URL scheme, command-line switches, CLI or MCP server instead.
 - Updates: the app checks GitHub Releases and links to the download; it doesn't replace itself.
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
+- Committers and reviewers: [ryouka0731](https://github.com/ryouka0731)
+- Approvers: [ryouka0731](https://github.com/ryouka0731)
+
+Only executables built by this repository's [release workflow](.github/workflows/release.yml) from a tagged commit are signed, and every signing request is approved manually.
+
+### Privacy policy
+
+This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it, with one exception: unless turned off in **Settings → Updates**, it asks GitHub (`api.github.com`) for the list of this project's releases to tell you about new versions: shortly after launch and then at most once a day after a successful check (retrying hourly while the check fails, e.g. offline). That request carries no personal data beyond what any HTTPS request reveals (your IP address and the app version in the User-Agent); GitHub's [privacy statement](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement) applies to it. Settings and the activity log stay on your PC.
 
 ## License
 
