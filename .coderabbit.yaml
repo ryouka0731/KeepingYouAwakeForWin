@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
-# CodeRabbit configuration for ryouka0731/KeepingYouAwake fork.
+# CodeRabbit configuration for ryouka0731/KeepingYouAwakeForWin.
 # Free Pro features apply because this repository is a public OSS project.
 # Docs: https://docs.coderabbit.ai/getting-started/yaml-configuration
 
@@ -21,10 +21,8 @@ reviews:
       - main
 
   path_filters:
-    - "!**/*.xcstrings"
-    - "!**/*.xcodeproj/**"
-    - "!**/*.xcworkspace/**"
-    - "!Frameworks/**"
+    - "!**/bin/**"
+    - "!**/obj/**"
     - "!**/.DS_Store"
 
   tools:

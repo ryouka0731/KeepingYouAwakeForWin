@@ -1,163 +1,94 @@
-# KeepingYouAwake (Amphetamine)
+# KeepingYouAwake for Windows
 
-🌐 [English](README.md) · **日本語** · [简体中文](README.zh-CN.md) · [Deutsch](README.de.md) · [Français](README.fr.md)
+🌐 [English](README.md) · **日本語**
 
-> [`newmarcel/KeepingYouAwake`](https://github.com/newmarcel/KeepingYouAwake) のコミュニティフォーク (メンテナ: [@ryouka0731](https://github.com/ryouka0731))。慣れ親しんだ `caffeinate` ラッパーに **Amphetamine 風の機能** を追加しています。upstream メンテナの依頼に従い、アプリの表示名とアイコン (橙色のカップ) は本家と区別しています。
+PC がスリープしないようにする、Windows のタスクトレイ常駐ユーティリティです。決めた時間のあいだ、またはトリガーが続く間（監視中のアプリが動いている、特定の Wi-Fi に接続している、ダウンロード中、アクティブ時間内 など）スリープを防ぎます。
 
-KeepingYouAwake (Amphetamine) は macOS 10.13 以降向けの軽量なメニューバーユーティリティです。決めた時間のあいだ、または条件 (トリガー) を満たしているあいだ、Mac をスリープさせません。
+Marcel Dierkes 氏の macOS アプリ [KeepingYouAwake](https://github.com/newmarcel/KeepingYouAwake) に Amphetamine 風の機能を加えた fork [KeepingYouAwake (Amphetamine)](https://github.com/ryouka0731/KeepingYouAwake-Amphetamine) を、C# / .NET で Windows 10 / 11 向けに書き直したものです。機能・設定の考え方・アクティビティログの形式はそのまま引き継いでいます。upstream のメンテナーの要望に従い、名前とアイコン（オレンジのカップ）は本家と区別しています。
 
-## upstream 1.6.8 から追加された機能
+## 機能
 
-### 自動で有効にするトリガー
+| | 機能 |
+|---|---|
+| ☕ | **トレイアイコンをクリック**でオン/オフ。右クリックで時間を選択（5 分〜5 時間、無期限、*今日の終わりまで*、独自の時間） |
+| ⏱ | 残り時間をツールチップとメニューに表示。開始・終了時の通知（オフにも可） |
+| 🖥 | ディスプレイも点けたまま、またはシステムだけ起こしてディスプレイの電源オフは許可 |
+| 📶 | **監視 Wi-Fi** — 指定のネットワークに接続している間 |
+| 🧩 | **監視アプリ** — `obs64.exe` や `Teams.exe` などが実行中の間 |
+| ⬇️ | **ダウンロード** — 監視フォルダーに `.crdownload` / `.part` などがある間 |
+| 🗓 | **アクティブ時間** — 曜日 × 時間帯（深夜 0 時をまたぐ設定も可） |
+| 🔌 | **AC 電源** — 電源につないでいる間 |
+| 🖵 | **外部ディスプレイ** — 接続している間 |
+| 🔊 | **外部音声出力** — Bluetooth / USB / HDMI から音を出している間 |
+| 📈 | **CPU 負荷** — CPU 使用率がしきい値を 30 秒以上上回っている間 |
+| 🔋 | バッテリー: 残量が下回ったら・バッテリー節約機能がオンになったら・フル充電になったら停止 |
+| 💽 | システムディスク / ほかのドライブのスピンダウン防止、マウスジグラー |
+| 👥 | 別ユーザーに切り替えたら一時停止し、戻ったら再開 |
+| 📜 | すべてのセッションのアクティビティログ（`%APPDATA%\KeepingYouAwake\activity.jsonl`） |
+| 🔗 | `keepingyouawake:` URL スキーム、コマンドライン引数、Python CLI、MCP サーバー |
+| 🌐 | 英語・日本語 |
 
-| 機能 | PR |
-|------|----|
-| 指定した Wi-Fi ネットワーク (SSID) に接続中 | [#18](https://github.com/ryouka0731/KeepingYouAwake-Amphetamine/pull/18) |
-| AC 電源に接続中 | [#19](https://github.com/ryouka0731/KeepingYouAwake-Amphetamine/pull/19) |
-| 指定したアプリのいずれかが起動中 | [#27](https://github.com/ryouka0731/KeepingYouAwake-Amphetamine/pull/27) / [#28](https://github.com/ryouka0731/KeepingYouAwake-Amphetamine/pull/28) |
-| 曜日 × 時間帯のスケジュール (深夜 0 時をまたぐ時間帯にも対応) | [#63](https://github.com/ryouka0731/KeepingYouAwake-Amphetamine/pull/63) |
-| ダウンロード進行中 (`*.crdownload`、`*.part` など) | [#64](https://github.com/ryouka0731/KeepingYouAwake-Amphetamine/pull/64) |
-| 音声を外部デバイス (Bluetooth、USB、HDMI、AirPlay など) に出力中 | [#78](https://github.com/ryouka0731/KeepingYouAwake-Amphetamine/pull/78) |
-| CPU 使用率がしきい値 (既定 50%) を 30 秒以上超えているあいだ | [#79](https://github.com/ryouka0731/KeepingYouAwake-Amphetamine/pull/79) |
-
-トリガーで始まったセッションは、そのトリガーの条件が終わると自動で終了します。手動で始めたセッションをトリガーが止めることはありません。トリガーを設定でオフにすると、そのトリガーが始めたセッションも終了します。
-
-### スリープ防止の強化
-
-| 機能 | PR |
-|------|----|
-| ディスクのスリープも防止 (`caffeinate -m`) | [#8](https://github.com/ryouka0731/KeepingYouAwake-Amphetamine/pull/8) |
-| Drive Alive — 有効中は起動ディスクと外付けドライブを回し続ける | [#20](https://github.com/ryouka0731/KeepingYouAwake-Amphetamine/pull/20) / [#104](https://github.com/ryouka0731/KeepingYouAwake-Amphetamine/pull/104) |
-| マウスジグラー — 有効中は 60 秒ごとにポインタを 1px 動かし、アイドル検出 (チャットの「離席中」など) を防ぐ | [#77](https://github.com/ryouka0731/KeepingYouAwake-Amphetamine/pull/77) |
-| バッテリーが満充電になったら停止 | [#9](https://github.com/ryouka0731/KeepingYouAwake-Amphetamine/pull/9) |
-| 継続時間「今日の終わりまで」(次の午前 0 時まで) | [#10](https://github.com/ryouka0731/KeepingYouAwake-Amphetamine/pull/10) |
-
-### 表示・記録
-
-| 機能 | PR |
-|------|----|
-| メニューバーのアイコン横に残り時間をカウントダウン表示 | [#55](https://github.com/ryouka0731/KeepingYouAwake-Amphetamine/pull/55) |
-| アクティビティログ — 開始・終了とその理由を JSONL に記録 (メニューの **アクティビティログを表示…**) | [#59](https://github.com/ryouka0731/KeepingYouAwake-Amphetamine/pull/59) / [#72](https://github.com/ryouka0731/KeepingYouAwake-Amphetamine/pull/72) |
-| 設定の **監視対象** タブ — Wi-Fi・アプリ・ダウンロードフォルダ・時間帯を編集 | [#86](https://github.com/ryouka0731/KeepingYouAwake-Amphetamine/pull/86) / [#89](https://github.com/ryouka0731/KeepingYouAwake-Amphetamine/pull/89) / [#108](https://github.com/ryouka0731/KeepingYouAwake-Amphetamine/pull/108) |
-
-### 外部からの操作
-
-| 機能 | PR |
-|------|----|
-| ショートカット.app のアクション (Activate / Deactivate / Toggle KeepingYouAwake) | [#17](https://github.com/ryouka0731/KeepingYouAwake-Amphetamine/pull/17) |
-| AppleScript | [#84](https://github.com/ryouka0731/KeepingYouAwake-Amphetamine/pull/84) |
-| `kya` コマンドラインツール | [#82](https://github.com/ryouka0731/KeepingYouAwake-Amphetamine/pull/82) |
-| MCP サーバー (`kya-mcp-server`) — Claude Code などの AI ツールから操作 | [#81](https://github.com/ryouka0731/KeepingYouAwake-Amphetamine/pull/81) |
-| Sparkle による自動アップデート | [#66](https://github.com/ryouka0731/KeepingYouAwake-Amphetamine/pull/66) / [#107](https://github.com/ryouka0731/KeepingYouAwake-Amphetamine/pull/107) |
-
-リリースごとの変更点は [CHANGELOG.md](CHANGELOG.md) を参照してください。
+監視項目にはそれぞれチェックボックスがあり、削除せずに一時停止できます。トリガーは「何も動いていないときにだけ開始し、自分が開始したセッションだけを終了する」ので、手動で始めたセッションをトリガーが止めることはありません。
 
 ## インストール
 
-### ダウンロード (推奨)
+[Releases](https://github.com/ryouka0731/KeepingYouAwakeForWin/releases) から `KeepingYouAwake-<version>-win-x64.zip`（ARM 版 PC は `-win-arm64.zip`）をダウンロードし、好きな場所（例: `%LOCALAPPDATA%\Programs\KeepingYouAwake`）に展開して `KeepingYouAwake.exe` を起動します。単一の実行ファイルで、インストーラーも .NET ランタイムも不要です。各 zip には `.sha256` が付いています。
 
-[Releases ページ →](https://github.com/ryouka0731/KeepingYouAwake-Amphetamine/releases)
+コード署名はしていないため、初回起動時に SmartScreen の警告が出ることがあります。**詳細情報 → 実行** を選んでください。
 
-各リリースに `KeepingYouAwake-<tag>.dmg` と `.dmg.sha256` を添付しています。Apple Developer ID を持っていないため、**ad-hoc 署名のみで公証されていません**。初回だけ次の手順で起動してください。
-
-1. dmg を開き、`KeepingYouAwake.app` を `/Applications` にドラッグします。
-2. アプリを **右クリック → 開く** し、ダイアログで「開く」を選びます。
-3. (または、一度起動に失敗したあとで **システム設定 → プライバシーとセキュリティ → このまま開く** を選びます。)
-
-2 回目以降は普通に起動できます。インストール後のアップデートは、設定の **アップデート** タブ (Sparkle) から受け取れます。
+サインイン時に自動起動するには **設定 → 一般 → ログイン時に起動** をオンにします。カップのアイコンを隠れたアイコン領域からタスクバーへドラッグしておくと常に見えて便利です。
 
 ### ソースからビルド
 
-```bash
-git clone https://github.com/ryouka0731/KeepingYouAwake-Amphetamine.git
-cd KeepingYouAwake-Amphetamine
-open KeepingYouAwake.xcworkspace
+```powershell
+git clone https://github.com/ryouka0731/KeepingYouAwakeForWin.git
+cd KeepingYouAwakeForWin
+dotnet run --project src/KeepingYouAwake
+# 単一ファイルとしてビルド:
+dotnet publish src/KeepingYouAwake -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o publish
 ```
 
-Xcode 16 以降で開いて実行します (アイコンが Xcode 16 で導入された Icon Composer 形式のため)。自動アップデート付きの配布版と同じものをビルドするには、スキーム **KeepingYouAwake (Direct)** を選びます。
+.NET 10 SDK が必要です。構成は [CONTRIBUTING.md](CONTRIBUTING.md) を参照してください。
 
-## 設定
+## 自動化
 
-ほとんどの機能は設定画面から設定できます。
+アプリは現在のユーザーに `keepingyouawake:` URL スキームを登録します。
 
-- **高度な設定** タブ — AC 電源・外部ディスプレイ・スケジュール・ダウンロード・外部音声出力・CPU 負荷の各トリガーのオン・オフ、ディスクスリープ防止、Drive Alive、マウスジグラー、満充電で停止、メニューバーのカウントダウン表示。
-- **監視対象** タブ — 監視する Wi-Fi ネットワーク、アプリ、ダウンロードフォルダ、有効にする時間帯。**Wi-Fi とアプリのトリガーは、ここに項目を登録すると有効になります** (スケジュールとダウンロードのトリガーは、ここで時間帯やフォルダを登録したうえで「高度な設定」でオンにします)。各項目の左のチェックボックスで、削除せずにワンクリックでオン・オフできます。
+| URL | 動作 |
+|-----|------|
+| `keepingyouawake:///activate` | デフォルトの時間で開始 |
+| `keepingyouawake:///activate?seconds=90`（`minutes=` / `hours=` も可） | 指定時間だけ開始（`0` で無期限） |
+| `keepingyouawake:///deactivate` | 停止 |
+| `keepingyouawake:///toggle` | 切り替え |
 
-**Wi-Fi トリガーについて:** 「監視対象」の Wi-Fi ネットワークの **+** から、いま接続中のネットワークを選んで追加できます (名前を直接入力することもできます)。macOS 14 以降では、接続中の Wi-Fi 名を読むために位置情報の許可が必要です。初めて **+** を押すと許可を求めるダイアログが出るので、許可してください。位置情報は記録も送信もしません。
-
-設定画面にない項目は `defaults write` で変更できます。
-
-```bash
-# CPU 負荷トリガーのしきい値 (%、1〜99、既定 50)
-defaults write info.marcel-dierkes.KeepingYouAwake \
-  info.marcel-dierkes.KeepingYouAwake.CPULoadActivationThreshold -float 70
+```powershell
+Start-Process "keepingyouawake:///activate?minutes=30"
+# 実行ファイルに直接渡す場合:
+KeepingYouAwake.exe --activate 1800   # 秒。省略するとデフォルトの時間
+KeepingYouAwake.exe --deactivate
+KeepingYouAwake.exe --toggle
 ```
 
-## 外部からの操作
+- [`tools/cli`](tools/cli/README.md) — `kya activate 30m`、`kya status --json` など
+- [`tools/mcp-server`](tools/mcp-server/README.md) — AI アシスタントからセッションを開始・停止・確認できる MCP サーバー
 
-### URL スキーム
+どちらも URL スキームでアプリを操作し、アクティビティログを読みます。
 
-```bash
-open "keepingyouawake:///activate?seconds=1800"   # 30 分 (seconds=0 で無期限)
-open "keepingyouawake:///deactivate"
-open "keepingyouawake:///toggle"
-```
+## 仕組み
 
-### AppleScript
+セッション中は Windows の **電源要求**（`PowerCreateRequest` / `PowerSetRequest`。「システム必須」と、ディスプレイの電源オフを許可していなければ「ディスプレイ必須」）を保持します。`powercfg /requests` で確認できます。手動でスリープさせることはでき、ノート PC のふたを閉じたときの動作は Windows の設定に従います。
 
-```applescript
-tell application "KeepingYouAwake" to activate kya for 1800   -- 秒数を省略すると無期限
-tell application "KeepingYouAwake" to deactivate kya
-tell application "KeepingYouAwake" to get active of kya       -- remaining seconds / source も取得可
-```
+設定は `%APPDATA%\KeepingYouAwake\settings.json`、アクティビティログはその隣に保存されます。
 
-### `kya` コマンドラインツール
+## macOS 版との違い
 
-```bash
-uv tool install "git+https://github.com/ryouka0731/KeepingYouAwake-Amphetamine.git#subdirectory=tools/cli"
-
-kya activate 30m          # 2h、45s、1h30m なども可。省略すると無期限
-kya activate --until-end-of-day
-kya deactivate
-kya status                # 有効なら終了コード 0、無効なら 1
-```
-
-詳しくは [tools/cli/README.md](tools/cli/README.md) を参照してください。
-
-### MCP サーバー (Claude Code など)
-
-```bash
-uv tool install "git+https://github.com/ryouka0731/KeepingYouAwake-Amphetamine.git#subdirectory=tools/mcp-server"
-```
-
-`kya_activate` / `kya_deactivate` / `kya_toggle` / `kya_status` などのツールを提供します。設定方法は [tools/mcp-server/README.md](tools/mcp-server/README.md) を参照してください。
-
-## 動作の仕組み
-
-macOS 標準の [`caffeinate`](https://web.archive.org/web/20140604153141/https://developer.apple.com/library/mac/documentation/Darwin/Reference/ManPages/man8/caffeinate.8.html) を呼び出す薄いラッパーです。upstream と同じ制約があります (たとえば、MacBook の蓋を閉じると macOS 自身がスリープを強制します)。
-
-## upstream との関係
-
-このフォークは `newmarcel/KeepingYouAwake` を追いかけ、upstream のメンテナンス修正を取り込みます。フォーク固有でないバグ修正は、適切な場合 upstream にも提案します。
-
-オリジナルの `newmarcel/KeepingYouAwake` と `keepingyouawake.app` は、引き続き [Marcel Dierkes 氏](https://github.com/newmarcel) のプロジェクトです。
-
-## 開発・CI
-
-- **CI** (`.github/workflows/ci.yml`) — PR ごとに、ビルド (配布用の Direct スキームを含む)、ユニットテスト (カバレッジ 37% 以上)、Python ツールのテスト、URL スキーム・CLI・アクティビティログの E2E、Sparkle の appcast の署名検証を実行します。
-- **リリース** (`.github/workflows/release.yml`) — `v*` タグの push で dmg をビルドして GitHub Release に添付し、Sparkle の appcast を更新します。
-- **セキュリティ** — CodeQL と OpenSSF Scorecard を実行しています。Actions は commit SHA で、CI の Python パッケージはハッシュで固定し、Dependabot が更新します。脆弱性の報告方法は [SECURITY.md](SECURITY.md) を参照してください。
-- **AI レビュー** — CodeRabbit / cubic / Sourcery などが各 PR にコメントします。
+- 監視アプリはバンドル ID ではなく実行ファイル名（`obs64.exe`）で判定します。
+- Windows 11 24H2 以降では、位置情報へのアクセスを許可したアプリにしか Wi-Fi のネットワーク名が見えません。Wi-Fi トリガーが反応しないときは、［設定］›［プライバシーとセキュリティ］›［位置情報］で「デスクトップアプリが位置情報にアクセスできるようにする」をオンにしてください。
+- 「低電力モード」は Windows のバッテリー節約機能（省電力モード）に対応します。
+- Drive Alive はシステム以外のすべてのローカルドライブを対象にします（Windows では内蔵と外付けの固定ドライブを確実に区別できないため）。
+- AppleScript / ショートカットの代わりに、URL スキーム・コマンドライン引数・CLI・MCP サーバーを使います。
+- アップデートは GitHub Releases を確認してダウンロードページを開きます（自動で置き換えはしません）。
 
 ## ライセンス
 
-MIT (upstream と同じ)。画像アセットも MIT です。
-
-フォークは Marcel Dierkes 氏の著作権表示を残したうえで、フォークとしての表示を追加しています (アプリ内の *About* と `Credits.rtf`)。同じ名前・アイコンでフォークを再配布しないという upstream の依頼を尊重し、表示名 **KeepingYouAwake (Amphetamine)** と橙色のカップアイコンで配布しています。
-
-## 古い macOS への対応
-
-upstream と同じです。
-
-- [Version 1.6.2](https://github.com/newmarcel/KeepingYouAwake/releases/tag/1.6.2) が macOS Sierra (10.12) に対応する最後のバージョンです。
-- [Version 1.5.2](https://github.com/newmarcel/KeepingYouAwake/releases/tag/1.5.2) が macOS Yosemite (10.10) / El Capitan (10.11) に対応する最後のバージョンです。
+MIT（upstream と同じ）。オリジナルの KeepingYouAwake は Marcel Dierkes 氏の著作物で、独立してメンテナンスされています。この移植版は同氏の著作権表示を残したうえで、移植版の著作権表示を追加しています。[LICENSE](LICENSE) を参照してください。

@@ -1,21 +1,16 @@
-# Socket Security configuration for ryouka0731/KeepingYouAwake fork.
-# Free for public OSS repositories. Docs: https://docs.socket.dev/docs/socket-yml
+# Socket Security configuration. Free for public OSS repositories.
+# Docs: https://docs.socket.dev/docs/socket-yml
 #
-# Today this repo has no external dependency manifests (all SwiftPM packages
-# under Packages/ use path: references; Sparkle is vendored). This file is a
-# forward-looking placeholder so any future external dependency added in a PR
-# is scanned for supply-chain risk (malware, typosquats, install scripts,
-# obfuscated code, telemetry, native code, privilege escalation).
+# Scans the NuGet test dependencies and the Python tool manifests for
+# supply-chain risk (malware, typosquats, install scripts, obfuscated code,
+# telemetry, native code, privilege escalation).
 
 version: 2
 
 projectIgnorePaths:
-  - "Frameworks/**"
-  - "**/*.xcodeproj/**"
-  - "**/*.xcworkspace/**"
+  - "**/bin/**"
+  - "**/obj/**"
 
-# Default issue rules; tune later if false-positives appear.
-# Slug names verified against docs.socket.dev/docs/socket-yml.
 issueRules:
   malware: true
   gptMalware: true

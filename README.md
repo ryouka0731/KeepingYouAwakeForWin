@@ -1,131 +1,94 @@
-# KeepingYouAwake (Amphetamine)
+# KeepingYouAwake for Windows
 
-🌐 **English** · [日本語](README.ja.md) · [简体中文](README.zh-CN.md) · [Deutsch](README.de.md) · [Français](README.fr.md)
+🌐 **English** · [日本語](README.ja.md)
 
-> **Community fork** of [`newmarcel/KeepingYouAwake`](https://github.com/newmarcel/KeepingYouAwake) by [@ryouka0731](https://github.com/ryouka0731), bringing **Amphetamine-style features** to a familiar `caffeinate` wrapper. The original app's name and icon are kept distinct (orange cup, suffixed display name) per the upstream maintainer's request.
->
-> EN: This is the *Amphetamine-parity* fork — same caffeinate engine, more triggers and durations.
-> 日本語: Amphetamine 機能パリティを目指した fork。caffeinate エンジンはそのままに、トリガと継続時間を強化。
-> 中文: 加入 Amphetamine 风格触发器和持续时间的社区分支，caffeinate 内核保持不变。
+A small Windows tray utility that keeps your PC from going to sleep — for a set time, or for as long as a trigger holds: a watched app is running, you're on a certain Wi-Fi network, a download is in progress, it's within your active hours, and more.
 
-KeepingYouAwake (Amphetamine) は macOS 10.13 以降向けの軽量メニューバーユーティリティ。事前に決めた時間 — または何らかのトリガが続く間 — Mac をスリープさせない。
+It is a Windows port of [KeepingYouAwake (Amphetamine)](https://github.com/ryouka0731/KeepingYouAwake-Amphetamine), the Amphetamine-style fork of Marcel Dierkes' macOS app [KeepingYouAwake](https://github.com/newmarcel/KeepingYouAwake). It keeps the same feature set, settings model and activity log format, rewritten in C# / .NET for Windows 10 and 11. Following the upstream maintainer's request, it ships under its own name and an orange cup icon.
 
-## What's added on top of upstream 1.6.8
+## Features
 
-| # | Feature | PR |
-|---|---------|----|
-| 1 | Prevent disk sleep (`caffeinate -m`) | [#8](https://github.com/ryouka0731/KeepingYouAwake/pull/8) |
-| 2 | Deactivate when battery is fully charged | [#9](https://github.com/ryouka0731/KeepingYouAwake/pull/9) |
-| 3 | Activation duration: until end of day (next midnight) | [#10](https://github.com/ryouka0731/KeepingYouAwake/pull/10) |
-| 4 | App Intents / Shortcuts.app integration (`Activate`, `Deactivate`, `Toggle`) | [#17](https://github.com/ryouka0731/KeepingYouAwake/pull/17) |
-| 5 | Trigger: while joined to a watched Wi-Fi SSID | [#18](https://github.com/ryouka0731/KeepingYouAwake/pull/18) |
-| 6 | Trigger: while on AC power (transition-aware) | [#19](https://github.com/ryouka0731/KeepingYouAwake/pull/19) |
-| 7 | Drive Alive — keep external drives spinning during activation | [#20](https://github.com/ryouka0731/KeepingYouAwake/pull/20) |
-| 8 | Trigger: while a watched application is running (multi-bundle) | [#27](https://github.com/ryouka0731/KeepingYouAwake/pull/27) / [#28](https://github.com/ryouka0731/KeepingYouAwake/pull/28) |
-| 9 | Trigger: schedule-based (weekday × time-of-day windows) | [#63](https://github.com/ryouka0731/KeepingYouAwake/pull/63) |
-| 10 | Trigger: while a download is in progress (`*.crdownload`, `*.part`, …) | [#64](https://github.com/ryouka0731/KeepingYouAwake/pull/64) |
-| 11 | Menu bar countdown (remaining time next to the icon) | [#55](https://github.com/ryouka0731/KeepingYouAwake/pull/55) |
-| 12 | Activity log (per-session JSONL audit trail at `~/Library/Application Support/KeepingYouAwake/activity.jsonl`) | [#59](https://github.com/ryouka0731/KeepingYouAwake/pull/59) / [#61](https://github.com/ryouka0731/KeepingYouAwake/pull/61) |
+| | Feature |
+|---|---|
+| ☕ | **Click the tray icon** to toggle; right-click for durations (5 min … 5 h, indefinitely, *until end of day*, and your own) |
+| ⏱ | Remaining time in the tray tooltip and menu; optional notifications when a session starts or ends |
+| 🖥 | Keeps the display on, or optionally lets it turn off while the system stays awake |
+| 📶 | **Watched Wi-Fi networks** — stay awake while joined to one of them |
+| 🧩 | **Watched applications** — stay awake while e.g. `obs64.exe` or `Teams.exe` runs |
+| ⬇️ | **Downloads** — stay awake while `.crdownload` / `.part` / … files exist in watched folders |
+| 🗓 | **Active hours** — weekday × time windows, including ones that wrap past midnight |
+| 🔌 | **AC power** — stay awake while plugged in |
+| 🖵 | **External display** — stay awake while one is connected |
+| 🔊 | **External audio** — stay awake while sound plays through Bluetooth / USB / HDMI |
+| 📈 | **CPU load** — stay awake while CPU usage stays above a threshold for 30 s |
+| 🔋 | Battery rules: stop below a battery level, when Battery Saver turns on, or when fully charged |
+| 💽 | Prevent the system disk / other drives from spinning down; optional mouse jiggler |
+| 👥 | Pause when you switch to another user, resume when you come back |
+| 📜 | Activity log of every session (`%APPDATA%\KeepingYouAwake\activity.jsonl`) |
+| 🔗 | `keepingyouawake:` URL scheme, command-line switches, a Python CLI and an MCP server |
+| 🌐 | English and Japanese |
 
-Plus session source tracking so a feature trigger can never deactivate a user-initiated timer, the `KYAActivationSource` invariant now enforced for the external-display trigger as well ([#58](https://github.com/ryouka0731/KeepingYouAwake/pull/58)), and a Sparkle auto-update appcast pipeline ([#66](https://github.com/ryouka0731/KeepingYouAwake/pull/66) — finishing setup steps in `docs/sparkle-auto-update-setup.md`).
+Every watched item has a checkbox to pause it without removing it. A trigger only starts a session when none is running, and only ends the session it started — it never ends one you started yourself.
 
 ## Installation
 
-### Download (recommended)
+Download `KeepingYouAwake-<version>-win-x64.zip` (or `-win-arm64.zip`) from the [Releases page](https://github.com/ryouka0731/KeepingYouAwakeForWin/releases), unzip it anywhere (for example `%LOCALAPPDATA%\Programs\KeepingYouAwake`) and run `KeepingYouAwake.exe`. It is a single self-contained executable; no installer and no .NET runtime are needed. Each zip has a `.sha256` next to it.
 
-[Releases page →](https://github.com/ryouka0731/KeepingYouAwake/releases)
+The executable is not code-signed, so SmartScreen may warn on first launch: choose **More info → Run anyway**.
 
-Each release attaches a `KeepingYouAwake-<tag>.dmg` and a `.dmg.sha256`. The bundle is **ad-hoc signed** but **not Apple-notarised** (no Developer ID), so the first launch needs:
-
-1. Mount the dmg, drag `KeepingYouAwake.app` into `/Applications`.
-2. Right-click the app → **Open** → confirm "Open" in the prompt.
-3. (Or, in System Settings → Privacy & Security, click *Open Anyway* after the first failed launch.)
-
-After that, the app launches normally.
+Turn on **Settings → General → Start at Login** to start it when you sign in. Tip: drag the cup out of the hidden-icons area onto the taskbar to keep it visible.
 
 ### Build from source
 
-```bash
-git clone https://github.com/ryouka0731/KeepingYouAwake.git
-cd KeepingYouAwake
-open KeepingYouAwake.xcworkspace
+```powershell
+git clone https://github.com/ryouka0731/KeepingYouAwakeForWin.git
+cd KeepingYouAwakeForWin
+dotnet run --project src/KeepingYouAwake
+# or a single-file build:
+dotnet publish src/KeepingYouAwake -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o publish
 ```
 
-Open in Xcode 16 or newer (the icon uses Apple's Icon Composer format introduced with Xcode 16) and Run. Targets macOS 10.13+.
+Requires the .NET 10 SDK. See [CONTRIBUTING.md](CONTRIBUTING.md) for the project layout.
 
-## Configuring the new triggers
+## Automation
 
-The fork's new feature toggles aren't all wired into the Settings UI yet — they live in `NSUserDefaults` and can be set with `defaults write`:
+The app registers the `keepingyouawake:` URL scheme for the current user:
 
-```bash
-# Watched application bundle identifiers (any matching app keeps KYA active)
-defaults write info.marcel-dierkes.KeepingYouAwake \
-  info.marcel-dierkes.KeepingYouAwake.WatchedApplicationBundleIdentifiers \
-  -array com.apple.FinalCut com.apple.Logic
+| URL | Action |
+|-----|--------|
+| `keepingyouawake:///activate` | start with the default duration |
+| `keepingyouawake:///activate?seconds=90` (or `minutes=` / `hours=`) | start for that long (`0` = indefinitely) |
+| `keepingyouawake:///deactivate` | stop |
+| `keepingyouawake:///toggle` | toggle |
 
-# Watched Wi-Fi SSIDs (case-insensitive match)
-defaults write info.marcel-dierkes.KeepingYouAwake \
-  info.marcel-dierkes.KeepingYouAwake.WatchedWiFiSSIDs \
-  -array Office-WiFi Home-5G
-
-# Activate while on AC power
-defaults write info.marcel-dierkes.KeepingYouAwake \
-  info.marcel-dierkes.KeepingYouAwake.ActivateOnACPowerEnabled -bool YES
-
-# Drive Alive
-defaults write info.marcel-dierkes.KeepingYouAwake \
-  info.marcel-dierkes.KeepingYouAwake.DriveAliveEnabled -bool YES
-
-# Prevent disk sleep
-defaults write info.marcel-dierkes.KeepingYouAwake \
-  info.marcel-dierkes.KeepingYouAwake.PreventDiskSleepEnabled -bool YES
-
-# Deactivate when battery is fully charged
-defaults write info.marcel-dierkes.KeepingYouAwake \
-  info.marcel-dierkes.KeepingYouAwake.DeactivateOnFullChargeEnabled -bool YES
-
-# Schedule trigger — array of {weekdays:[1..7], startMinutes, endMinutes}
-defaults write info.marcel-dierkes.KeepingYouAwake \
-  info.marcel-dierkes.KeepingYouAwake.ScheduleEnabled -bool YES
-# (configure ScheduleWindows via PlistBuddy / `defaults write -array`)
-
-# Activate while a download is in progress
-defaults write info.marcel-dierkes.KeepingYouAwake \
-  info.marcel-dierkes.KeepingYouAwake.DownloadInProgressActivationEnabled -bool YES
-
-# Hide the menu bar countdown (default: shown)
-defaults write info.marcel-dierkes.KeepingYouAwake \
-  info.marcel-dierkes.KeepingYouAwake.MenuBarCountdownDisabled -bool YES
+```powershell
+Start-Process "keepingyouawake:///activate?minutes=30"
+# the same through the executable:
+KeepingYouAwake.exe --activate 1800   # seconds; omit for the default duration
+KeepingYouAwake.exe --deactivate
+KeepingYouAwake.exe --toggle
 ```
 
-`NSWorkspace.shared.open()` of `keepingyouawake:///activate?seconds=N` / `:///deactivate` / `:///toggle` is also exposed as App Intents for Shortcuts.app.
+- [`tools/cli`](tools/cli/README.md) — `kya activate 30m`, `kya status --json`, …
+- [`tools/mcp-server`](tools/mcp-server/README.md) — lets AI assistants start, stop and inspect sessions
+
+Both drive the app through the URL scheme and read the activity log.
 
 ## How does it work?
 
-The app is a thin wrapper around macOS's built-in [`caffeinate`](https://web.archive.org/web/20140604153141/https://developer.apple.com/library/mac/documentation/Darwin/Reference/ManPages/man8/caffeinate.8.html). All upstream caveats apply (e.g. closed-lid sleep on portable Macs is still enforced by macOS).
+While a session runs, the app holds a Windows **power request** (`PowerCreateRequest` / `PowerSetRequest`, *system required* plus *display required* unless the display may turn off). You can see it with `powercfg /requests`. Windows can still be put to sleep manually, and closing a laptop lid follows your lid settings.
 
-## Relationship to upstream
+Settings live in `%APPDATA%\KeepingYouAwake\settings.json`, the activity log next to it.
 
-This fork tracks `newmarcel/KeepingYouAwake` and ports back any maintenance fixes the original receives. Bug fixes that aren't fork-specific are first proposed upstream where appropriate.
+## Differences from the macOS app
 
-The original `newmarcel/KeepingYouAwake` and `keepingyouawake.app` remain the project of [Marcel Dierkes](https://github.com/newmarcel) and are independently maintained.
-
-## Bot review / CI infrastructure
-
-- **CI** (`.github/workflows/ci.yml`) — every PR runs xcodebuild build, unit tests against the SPM packages, and a URL-scheme E2E that asserts `caffeinate` actually spawns/exits.
-- **Release** (`.github/workflows/release.yml`) — every `v*` tag builds a Release-config dmg with ad-hoc signing and uploads it to the matching GitHub Release.
-- **CodeQL + OSSF Scorecards** — security audits on PRs and on a weekly schedule.
-- **AI review** — CodeRabbit, cubic, Gitar, Socket Security, and Gemini Code Assist all comment on each PR.
-- **Dependabot** — npm / GitHub Actions weekly version updates with grouped minor/patch.
+- Watched applications are matched by executable name (`obs64.exe`) instead of bundle identifier.
+- Windows 11 24H2 and later only reveal the Wi-Fi network name to apps with location access: allow *Let desktop apps access your location* in Settings → Privacy & security → Location if the Wi-Fi trigger doesn't react.
+- "Low Power Mode" is Windows' Battery Saver / Energy Saver.
+- Drive Alive keeps every non-system local drive spinning (Windows doesn't reliably tell internal from external fixed drives).
+- No AppleScript / Shortcuts; use the URL scheme, command-line switches, CLI or MCP server instead.
+- Updates: the app checks GitHub Releases and links to the download; it doesn't replace itself.
 
 ## License
 
-MIT. Same license as upstream. Provided image assets are also MIT.
-
-The fork keeps Marcel Dierkes' original copyright and adds its own attribution; see the in-app *About* panel and `Credits.rtf` for full attribution. Upstream's polite request — don't redistribute forks with the same name and icon — is honoured: this fork ships under the display name **KeepingYouAwake (Amphetamine)** and an orange cup icon.
-
-## Old macOS support
-
-Same as upstream:
-- [Version 1.6.2](https://github.com/newmarcel/KeepingYouAwake/releases/tag/1.6.2) is the last release that supports macOS Sierra (10.12).
-- [Version 1.5.2](https://github.com/newmarcel/KeepingYouAwake/releases/tag/1.5.2) is the last release that supports macOS Yosemite (10.10) / El Capitan (10.11).
+MIT, same as upstream. The original KeepingYouAwake is © Marcel Dierkes and independently maintained; this port keeps his copyright and adds its own. See [LICENSE](LICENSE).
