@@ -27,7 +27,10 @@ internal static class Sta
         });
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
-        if (!thread.Join(TimeSpan.FromSeconds(60))) { throw new TimeoutException("STA test body did not finish"); }
+        if (!thread.Join(TimeSpan.FromSeconds(60)))
+        {
+            throw new TimeoutException("STA test body did not finish. Dialog log: " + string.Join(" | ", DialogLog));
+        }
         failure?.Throw();
     }
 
@@ -73,6 +76,9 @@ internal static class Sta
     public const int IdOk = 1;
     public const int IdCancel = 2;
 
+    /// <summary>What the native-dialog helper saw and did, reported when a test times out.</summary>
+    public static System.Collections.Concurrent.ConcurrentQueue<string> DialogLog { get; } = new();
+
     private const string ClaimProperty = "KeepingYouAwake.Tests.Claimed";
     private static int nextClaim;
 
@@ -90,10 +96,16 @@ internal static class Sta
             {
                 dialog = FindUnclaimedDialog();
                 if (dialog == IntPtr.Zero) { return false; }
+                DialogLog.Enqueue($"claim {dialog:X} for {buttonId}");
                 // Tagged on the window itself: a later dialog may reuse the same handle value.
                 SetProp(dialog, ClaimProperty, claim);
             }
-            if (!IsWindow(dialog) || GetProp(dialog, ClaimProperty) != claim) { return true; }
+            if (!IsWindow(dialog) || GetProp(dialog, ClaimProperty) != claim)
+            {
+                DialogLog.Enqueue($"gone {dialog:X}");
+                return true;
+            }
+            DialogLog.Enqueue($"post {buttonId} to {dialog:X}");
             PostMessage(dialog, WmCommand, new IntPtr(buttonId), IntPtr.Zero);
             if (buttonId == IdCancel) { PostMessage(dialog, WmClose, IntPtr.Zero, IntPtr.Zero); }
             return false;
@@ -103,13 +115,16 @@ internal static class Sta
     private static IntPtr FindUnclaimedDialog()
     {
         var found = IntPtr.Zero;
+        var seen = new List<string>();
         EnumThreadWindows(GetCurrentThreadId(), (hwnd, _) =>
         {
             var name = new System.Text.StringBuilder(64);
             GetClassName(hwnd, name, name.Capacity);
+            seen.Add($"{name}{(IsWindowVisible(hwnd) ? "" : "(hidden)")}");
             if (name.ToString() == "#32770" && IsWindowVisible(hwnd) && GetProp(hwnd, ClaimProperty) == IntPtr.Zero) { found = hwnd; return false; }
             return true;
         }, IntPtr.Zero);
+        if (found == IntPtr.Zero && seen.Count > 0 && DialogLog.Count < 200) { DialogLog.Enqueue("scan: " + string.Join(",", seen.Distinct())); }
         return found;
     }
 

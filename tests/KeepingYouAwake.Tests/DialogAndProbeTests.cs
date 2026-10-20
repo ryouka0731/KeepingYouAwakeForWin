@@ -249,15 +249,24 @@ public class WinFormsPromptsTests
     });
 
     [Fact]
-    public void MessageBoxesReturnTheButtonPressed() => WithOwner(owner =>
+    public void ConfirmReturnsTrueForOk() => WithOwner(owner =>
     {
-        var prompts = WinFormsPrompts.Instance;
         Sta.WhenNativeDialogShown(Sta.IdOk);
-        Assert.True(prompts.Confirm(owner, "Sure?", "Title"));
+        Assert.True(WinFormsPrompts.Instance.Confirm(owner, "Sure?", "Title"));
+    });
+
+    [Fact]
+    public void ConfirmReturnsFalseForCancel() => WithOwner(owner =>
+    {
         Sta.WhenNativeDialogShown(Sta.IdCancel);
-        Assert.False(prompts.Confirm(owner, "Sure?", "Title"));
+        Assert.False(WinFormsPrompts.Instance.Confirm(owner, "Sure?", "Title"));
+    });
+
+    [Fact]
+    public void InformWaitsForOk() => WithOwner(owner =>
+    {
         Sta.WhenNativeDialogShown(Sta.IdOk);
-        prompts.Inform(owner, "Done", "Title", MessageBoxIcon.Information);
+        WinFormsPrompts.Instance.Inform(owner, "Done", "Title", MessageBoxIcon.Information);
     });
 
     [Fact]
