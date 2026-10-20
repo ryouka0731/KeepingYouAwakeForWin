@@ -38,11 +38,22 @@ jobs:
         # Hash-pinned lock (see the .in file for how to regenerate it).
         run: python -m pip install --require-hashes -r .github/requirements/requirements-python-tests.txt
 
-      - name: Run pytest (kya CLI + MCP server)
-        run: pytest -v
+      - name: Run pytest (kya CLI + MCP server, unit + protocol tests)
+        # Test paths come from pytest.ini; the end-to-end tests skip here
+        # (they need the published app, see the build-and-test job).
+        run: >-
+          pytest -v --cov=tools/cli --cov=tools/mcp-server --cov-branch
+          --cov-report=term-missing --cov-report=xml:python-coverage.xml
+
+      - name: Upload Python coverage
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: python-coverage
+          path: python-coverage.xml
 
   build-and-test:
-    name: Build + unit tests
+    name: Build + unit, component and end-to-end tests
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -51,49 +62,80 @@ jobs:
         with:
           global-json-file: global.json
 
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+
       - name: Restore
-        run: dotnet restore KeepingYouAwake.slnx
+        run: |
+          dotnet restore KeepingYouAwake.slnx
+          dotnet tool restore
 
       - name: Build (Release)
         run: dotnet build KeepingYouAwake.slnx --configuration Release --no-restore
 
-      - name: Unit tests
+      - name: Core unit tests
         run: >-
           dotnet test tests/KeepingYouAwake.Core.Tests --configuration Release --no-build
-          --logger "trx;LogFileName=results.trx" --collect:"XPlat Code Coverage"
-          --results-directory TestResults
+          --logger "trx;LogFileName=core.trx" --collect:"XPlat Code Coverage"
+          --results-directory TestResults/core
 
-      - name: Smoke test (publish + launch + URL commands)
-        # Publishes the self-contained exe, starts it, drives it with the same
-        # command-line arguments the URL scheme uses, and checks that it is
-        # still running and that the activity log recorded the session.
+      - name: App component and platform tests
+        run: >-
+          dotnet test tests/KeepingYouAwake.Tests --configuration Release --no-build
+          --logger "trx;LogFileName=app.trx" --collect:"XPlat Code Coverage"
+          --results-directory TestResults/app
+
+      - name: Merge .NET coverage
+        run: >-
+          dotnet tool run reportgenerator "-reports:TestResults/**/coverage.cobertura.xml"
+          -targetdir:coverage "-reporttypes:Cobertura;HtmlSummary;MarkdownSummaryGithub"
+          "-assemblyfilters:+KeepingYouAwake;+KeepingYouAwake.Core" "-filefilters:-**/obj/**"
+
+      - name: End-to-end tests (published app)
+        # Publishes the self-contained exe and drives it like a user: the kya CLI
+        # through the URL scheme, forwarded command-line switches and settings.json
+        # edits, checked against the activity log and `powercfg /requests`.
         shell: pwsh
         run: |
           dotnet publish src/KeepingYouAwake -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o publish
-          $exe = Resolve-Path publish/KeepingYouAwake.exe
-          $app = Start-Process $exe -PassThru
-          Start-Sleep -Seconds 5
-          if ($app.HasExited) { throw "app exited early with code $($app.ExitCode)" }
-          Start-Process $exe -ArgumentList '--activate','60' -Wait
-          Start-Sleep -Seconds 3
-          $log = Join-Path $env:APPDATA 'KeepingYouAwake\activity.jsonl'
-          if (-not (Test-Path $log)) { throw "activity log not written" }
-          $last = Get-Content $log | Select-Object -Last 1 | ConvertFrom-Json
-          if ($last.requestedDuration -ne 60 -or $last.endedAt) { throw "unexpected log entry: $($last | ConvertTo-Json -Compress)" }
-          $requests = powercfg /requests | Out-String
-          Write-Host $requests
-          Start-Process $exe -ArgumentList '--deactivate' -Wait
-          Start-Sleep -Seconds 3
-          $last = Get-Content $log | Select-Object -Last 1 | ConvertFrom-Json
-          if ($last.endedReason -ne 'user-cancelled') { throw "session not ended: $($last | ConvertTo-Json -Compress)" }
-          Stop-Process -Id $app.Id -Force
-          # powercfg may leave a non-zero exit code when not elevated; the assertions above passed.
-          exit 0
+          python -m pip install --require-hashes -r .github/requirements/requirements-python-tests.txt
+          $env:KYA_E2E_EXE = (Resolve-Path publish/KeepingYouAwake.exe).Path
+          pytest tools/e2e -v
 
-      - name: Upload test results
+      - name: Upload test results and coverage
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: test-results
-          path: TestResults
+          name: dotnet-tests
+          path: |
+            TestResults/**/*.trx
+            coverage
           if-no-files-found: ignore
+
+  metrics:
+    name: Coverage and complexity gates
+    needs: [python-tests, build-and-test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Install metrics deps
+        run: python -m pip install --require-hashes -r .github/requirements/requirements-python-tests.txt
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: artifacts
+
+      - name: Report and check thresholds
+        # Writes the coverage / complexity tables to the job summary and fails when
+        # a threshold in scripts/code_metrics.py is not met.
+        run: >-
+          python scripts/code_metrics.py
+          --dotnet artifacts/dotnet-tests/coverage/Cobertura.xml
+          --python artifacts/python-coverage/python-coverage.xml
+          --summary "$GITHUB_STEP_SUMMARY" --check

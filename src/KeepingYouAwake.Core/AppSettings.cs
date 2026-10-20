@@ -233,7 +233,16 @@ public sealed class SettingsStore
 
 public static class AppPaths
 {
+    /// <summary>Overrides <see cref="DataDirectory"/> (end-to-end tests, portable setups).</summary>
+    public const string DataDirectoryVariable = "KEEPINGYOUAWAKE_DATA_DIR";
+
     /// <summary><c>%APPDATA%\KeepingYouAwake</c>: settings and the activity log.</summary>
-    public static string DataDirectory =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "KeepingYouAwake");
+    public static string DataDirectory => ResolveDataDirectory(
+        Environment.GetEnvironmentVariable(DataDirectoryVariable),
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData));
+
+    internal static string ResolveDataDirectory(string? overrideDirectory, string applicationData) =>
+        string.IsNullOrWhiteSpace(overrideDirectory)
+            ? Path.Join(applicationData, "KeepingYouAwake")
+            : Path.GetFullPath(Environment.ExpandEnvironmentVariables(overrideDirectory.Trim()));
 }

@@ -258,77 +258,81 @@ def _current_status() -> dict[str, Any]:
 server = Server("kya")
 
 
+# Tool definitions advertised by list_tools(); call_tool() dispatches through _TOOLS.
+TOOL_DEFINITIONS: list[mcp_types.Tool] = [
+    mcp_types.Tool(
+        name="kya_activate",
+        description=(
+            "Start a keep-awake session. Pass an integer number of seconds, "
+            "or the strings 'indefinite' or 'until_end_of_day'."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "duration": {
+                    "oneOf": [
+                        {"type": "integer", "minimum": 1},
+                        {"type": "string", "enum": ["indefinite", "until_end_of_day"]},
+                    ]
+                }
+            },
+            "required": ["duration"],
+        },
+    ),
+    mcp_types.Tool(
+        name="kya_deactivate",
+        description="Stop the current keep-awake session, if any.",
+        inputSchema={"type": "object", "properties": {}},
+    ),
+    mcp_types.Tool(
+        name="kya_toggle",
+        description="Toggle KYA. If active → deactivate; if inactive → activate (default duration).",
+        inputSchema={"type": "object", "properties": {}},
+    ),
+    mcp_types.Tool(
+        name="kya_status",
+        description="Return the current KYA state (active, source, fireDate, remainingSeconds).",
+        inputSchema={"type": "object", "properties": {}},
+    ),
+    mcp_types.Tool(
+        name="kya_list_recent_sessions",
+        description="Return up to N recent activate/deactivate entries from the activity log.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "minimum": 1, "maximum": 200, "default": 20}
+            },
+        },
+    ),
+    mcp_types.Tool(
+        name="kya_set_default",
+        description=(
+            "Change one of KYA's known settings (written to "
+            "%APPDATA%\\KeepingYouAwake\\settings.json; the running app applies "
+            "it immediately). The key must be in the allow-list — arbitrary "
+            "keys are rejected. Keys: " + ", ".join(sorted(p for p, _ in _SETTING_PROPERTIES.values())) + "."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "key": {"type": "string"},
+                "value": {
+                    "oneOf": [
+                        {"type": "boolean"},
+                        {"type": "number"},
+                        {"type": "string"},
+                    ]
+                },
+            },
+            "required": ["key", "value"],
+        },
+    ),
+]
+
+
 @server.list_tools()
 async def list_tools() -> list[mcp_types.Tool]:
-    return [
-        mcp_types.Tool(
-            name="kya_activate",
-            description=(
-                "Start a keep-awake session. Pass an integer number of seconds, "
-                "or the strings 'indefinite' or 'until_end_of_day'."
-            ),
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "duration": {
-                        "oneOf": [
-                            {"type": "integer", "minimum": 1},
-                            {"type": "string", "enum": ["indefinite", "until_end_of_day"]},
-                        ]
-                    }
-                },
-                "required": ["duration"],
-            },
-        ),
-        mcp_types.Tool(
-            name="kya_deactivate",
-            description="Stop the current keep-awake session, if any.",
-            inputSchema={"type": "object", "properties": {}},
-        ),
-        mcp_types.Tool(
-            name="kya_toggle",
-            description="Toggle KYA. If active → deactivate; if inactive → activate (default duration).",
-            inputSchema={"type": "object", "properties": {}},
-        ),
-        mcp_types.Tool(
-            name="kya_status",
-            description="Return the current KYA state (active, source, fireDate, remainingSeconds).",
-            inputSchema={"type": "object", "properties": {}},
-        ),
-        mcp_types.Tool(
-            name="kya_list_recent_sessions",
-            description="Return up to N recent activate/deactivate entries from the activity log.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "limit": {"type": "integer", "minimum": 1, "maximum": 200, "default": 20}
-                },
-            },
-        ),
-        mcp_types.Tool(
-            name="kya_set_default",
-            description=(
-                "Change one of KYA's known settings (written to "
-                "%APPDATA%\\KeepingYouAwake\\settings.json; the running app applies "
-                "it immediately). The key must be in the allow-list — arbitrary "
-                "keys are rejected. Keys: " + ", ".join(sorted(p for p, _ in _SETTING_PROPERTIES.values())) + "."
-            ),
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "key": {"type": "string"},
-                    "value": {
-                        "oneOf": [
-                            {"type": "boolean"},
-                            {"type": "number"},
-                            {"type": "string"},
-                        ]
-                    },
-                },
-                "required": ["key", "value"],
-            },
-        ),
-    ]
+    return TOOL_DEFINITIONS
 
 
 def _text(payload: Any) -> list[mcp_types.TextContent]:
@@ -336,64 +340,67 @@ def _text(payload: Any) -> list[mcp_types.TextContent]:
     return [mcp_types.TextContent(type="text", text=text)]
 
 
+def _activate_url(duration: Any) -> str | None:
+    """The activate URL for a duration (seconds, "indefinite" or "until_end_of_day"); None if unknown."""
+    if duration == "indefinite":
+        # Explicit seconds=0: without a duration the app uses its default
+        # duration, which is not indefinite.
+        return "keepingyouawake:///activate?seconds=0"
+    if duration == "until_end_of_day":
+        now = datetime.now()
+        tomorrow = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+        return f"keepingyouawake:///activate?seconds={int((tomorrow - now).total_seconds())}"
+    if isinstance(duration, str):
+        return None
+    return f"keepingyouawake:///activate?seconds={int(duration)}"
+
+
+def _tool_activate(arguments: dict[str, Any]) -> Any:
+    duration = arguments["duration"]
+    url = _activate_url(duration)
+    if url is None:
+        return f"unknown duration string: {duration!r}"
+    err = _open_url(url)
+    if err:
+        return {"activated": False, "request": duration, "error": err}
+    return {"activated": True, "request": duration}
+
+
+def _simple_url_tool(url: str, result_key: str) -> Any:
+    err = _open_url(url)
+    return {result_key: False, "error": err} if err else {result_key: True}
+
+
+def _tool_set_default(arguments: dict[str, Any]) -> Any:
+    key = arguments["key"]
+    value = arguments["value"]
+    if key not in ALLOWED_DEFAULT_KEYS:
+        return f"refused: key {key!r} not in allow-list"
+    prop, kind = SETTING_KEYS[key]
+    try:
+        coerced = _coerce_setting(value, kind)
+        _write_setting(prop, coerced)
+    except (ValueError, OSError) as exc:
+        return {"set": False, "key": key, "value": value, "error": str(exc)}
+    return {"set": True, "key": key, "property": prop, "value": coerced}
+
+
+_TOOLS: dict[str, Any] = {
+    "kya_activate": _tool_activate,
+    "kya_deactivate": lambda _args: _simple_url_tool("keepingyouawake:///deactivate", "deactivated"),
+    "kya_toggle": lambda _args: _simple_url_tool("keepingyouawake:///toggle", "toggled"),
+    "kya_status": lambda _args: _current_status(),
+    "kya_list_recent_sessions": lambda args: _read_recent_entries(int(args.get("limit", 20))),
+    "kya_set_default": _tool_set_default,
+}
+
+
 @server.call_tool()
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[mcp_types.TextContent]:
-    if name == "kya_activate":
-        duration = arguments["duration"]
-        if isinstance(duration, str):
-            if duration == "indefinite":
-                # Explicit seconds=0: without a duration the app uses its
-                # default duration, which is not indefinite.
-                url = "keepingyouawake:///activate?seconds=0"
-            elif duration == "until_end_of_day":
-                # Seconds until next local midnight.
-                now = datetime.now()
-                tomorrow = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
-                seconds = int((tomorrow - now).total_seconds())
-                url = f"keepingyouawake:///activate?seconds={seconds}"
-            else:
-                return _text(f"unknown duration string: {duration!r}")
-        else:
-            seconds = int(duration)
-            url = f"keepingyouawake:///activate?seconds={seconds}"
-        err = _open_url(url)
-        if err:
-            return _text({"activated": False, "request": duration, "error": err})
-        return _text({"activated": True, "request": duration})
-
-    if name == "kya_deactivate":
-        err = _open_url("keepingyouawake:///deactivate")
-        if err:
-            return _text({"deactivated": False, "error": err})
-        return _text({"deactivated": True})
-
-    if name == "kya_toggle":
-        err = _open_url("keepingyouawake:///toggle")
-        if err:
-            return _text({"toggled": False, "error": err})
-        return _text({"toggled": True})
-
-    if name == "kya_status":
-        return _text(_current_status())
-
-    if name == "kya_list_recent_sessions":
-        limit = int(arguments.get("limit", 20))
-        return _text(_read_recent_entries(limit))
-
-    if name == "kya_set_default":
-        key = arguments["key"]
-        value = arguments["value"]
-        if key not in ALLOWED_DEFAULT_KEYS:
-            return _text(f"refused: key {key!r} not in allow-list")
-        prop, kind = SETTING_KEYS[key]
-        try:
-            coerced = _coerce_setting(value, kind)
-            _write_setting(prop, coerced)
-        except (ValueError, OSError) as exc:
-            return _text({"set": False, "key": key, "value": value, "error": str(exc)})
-        return _text({"set": True, "key": key, "property": prop, "value": coerced})
-
-    return _text(f"unknown tool: {name}")
+    handler = _TOOLS.get(name)
+    if handler is None:
+        return _text(f"unknown tool: {name}")
+    return _text(handler(arguments))
 
 
 def main() -> None:

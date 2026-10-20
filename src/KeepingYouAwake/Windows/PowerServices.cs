@@ -17,38 +17,50 @@ internal sealed class PowerRequestAssertion : ISleepAssertion, IDisposable
     private bool displaySet;
     private bool usingFallback;
 
+    public const string Reason = "KeepingYouAwake is preventing sleep.";
+
+    /// <summary>Whether the power request API failed and SetThreadExecutionState is used instead.</summary>
+    public bool UsesFallback => usingFallback;
+
+    public bool IsHeld => usingFallback ? fallbackHeld : systemSet;
+    private bool fallbackHeld;
+
     public void Acquire(bool allowDisplaySleep)
     {
-        if (request == IntPtr.Zero && !usingFallback)
-        {
-            var context = new ReasonContext
-            {
-                Version = PowerRequestContextVersion,
-                Flags = PowerRequestContextSimpleString,
-                SimpleReasonString = "KeepingYouAwake is preventing sleep.",
-            };
-            request = PowerCreateRequest(ref context);
-            if (request == IntPtr.Zero || request == new IntPtr(-1))
-            {
-                request = IntPtr.Zero;
-                usingFallback = true;
-            }
-        }
-
+        EnsureRequest();
         if (usingFallback)
         {
             var flags = ExecutionState.Continuous | ExecutionState.SystemRequired;
             if (!allowDisplaySleep) { flags |= ExecutionState.DisplayRequired; }
             SetThreadExecutionState(flags);
+            fallbackHeld = true;
             return;
         }
-
         if (!systemSet) { systemSet = PowerSetRequest(request, PowerRequestType.SystemRequired); }
-        if (!allowDisplaySleep && !displaySet)
+        SetDisplayRequired(!allowDisplaySleep);
+    }
+
+    private void EnsureRequest()
+    {
+        if (request != IntPtr.Zero || usingFallback) { return; }
+        var context = new ReasonContext
         {
-            displaySet = PowerSetRequest(request, PowerRequestType.DisplayRequired);
+            Version = PowerRequestContextVersion,
+            Flags = PowerRequestContextSimpleString,
+            SimpleReasonString = Reason,
+        };
+        request = PowerCreateRequest(ref context);
+        if (request == IntPtr.Zero || request == new IntPtr(-1))
+        {
+            request = IntPtr.Zero;
+            usingFallback = true;
         }
-        else if (allowDisplaySleep && displaySet)
+    }
+
+    private void SetDisplayRequired(bool required)
+    {
+        if (required && !displaySet) { displaySet = PowerSetRequest(request, PowerRequestType.DisplayRequired); }
+        else if (!required && displaySet)
         {
             PowerClearRequest(request, PowerRequestType.DisplayRequired);
             displaySet = false;
@@ -60,6 +72,7 @@ internal sealed class PowerRequestAssertion : ISleepAssertion, IDisposable
         if (usingFallback)
         {
             SetThreadExecutionState(ExecutionState.Continuous);
+            fallbackHeld = false;
             return;
         }
         if (request == IntPtr.Zero) { return; }
@@ -100,9 +113,9 @@ internal sealed class WindowsPowerSource : IPowerSource, IDisposable
         poll.Dispose();
     }
 
-    private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e) => UiThread.Post(Refresh);
+    internal void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e) => UiThread.Post(Refresh);
 
-    private void Refresh()
+    internal void Refresh()
     {
         var status = Read();
         if (status == Current) { return; }
@@ -110,24 +123,10 @@ internal sealed class WindowsPowerSource : IPowerSource, IDisposable
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
-    internal static PowerStatus Read()
-    {
-        if (!GetSystemPowerStatus(out var s)) { return new PowerStatus(BatteryState.Unknown, 100, false); }
-        var saver = s.SystemStatusFlag == 1;
-        var noBattery = s.BatteryFlag == 128 || s.BatteryFlag == 255 || s.BatteryLifePercent == 255;
-        if (noBattery || s.ACLineStatus == 255) { return new PowerStatus(BatteryState.Unknown, 100, saver); }
-
-        double percent = s.BatteryLifePercent;
-        var charging = (s.BatteryFlag & 8) != 0;
-        var state = s.ACLineStatus switch
-        {
-            0 => BatteryState.Unplugged,
-            _ when charging && percent < 100 => BatteryState.Charging,
-            // On AC and not charging: full, or held at a charge limit.
-            _ => BatteryState.Full,
-        };
-        return new PowerStatus(state, percent, saver);
-    }
+    internal static PowerStatus Read() =>
+        GetSystemPowerStatus(out var s)
+            ? WindowsDecoding.DecodePowerStatus(s.ACLineStatus, s.BatteryFlag, s.BatteryLifePercent, s.SystemStatusFlag)
+            : new PowerStatus(BatteryState.Unknown, 100, false);
 }
 
 /// <summary>Fast user switching and Remote Desktop connect / disconnect.</summary>
@@ -140,7 +139,7 @@ internal sealed class WindowsSessionEvents : ISessionEvents, IDisposable
 
     public void Dispose() => SystemEvents.SessionSwitch -= OnSessionSwitch;
 
-    private void OnSessionSwitch(object sender, SessionSwitchEventArgs e)
+    internal void OnSessionSwitch(object sender, SessionSwitchEventArgs e)
     {
         switch (e.Reason)
         {
@@ -170,7 +169,7 @@ internal sealed class DisplayConfigMonitor : IDisplayMonitor, IDisposable
 
     public void Dispose() => SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
 
-    private void OnDisplaySettingsChanged(object? sender, EventArgs e) => UiThread.Post(() =>
+    internal void OnDisplaySettingsChanged(object? sender, EventArgs e) => UiThread.Post(() =>
     {
         var count = Count();
         if (count == ExternalDisplayCount) { return; }
@@ -189,19 +188,9 @@ internal sealed class DisplayConfigMonitor : IDisplayMonitor, IDisposable
             if (result == 122) { continue; } // ERROR_INSUFFICIENT_BUFFER: the topology changed meanwhile
             if (result != 0) { break; }
 
-            var external = 0;
-            for (var i = 0; i < pathCount; i++)
-            {
-                var technology = BitConverter.ToUInt32(paths, i * DisplayConfigPathInfoSize + PathOutputTechnologyOffset);
-                // Built-in panels, and virtual displays (Remote Desktop, VMs, virtual display drivers).
-                if (technology is not (OutputTechnologyInternal or OutputTechnologyLvds
-                    or OutputTechnologyDisplayPortEmbedded or OutputTechnologyUdiEmbedded
-                    or OutputTechnologyIndirectVirtual or OutputTechnologyOther))
-                {
-                    external++;
-                }
-            }
-            return external;
+            var technologies = Enumerable.Range(0, (int)pathCount)
+                .Select(i => BitConverter.ToUInt32(paths, i * DisplayConfigPathInfoSize + PathOutputTechnologyOffset));
+            return WindowsDecoding.CountExternalDisplays(technologies);
         }
         // Fallback: every screen beyond the first.
         return Math.Max(0, Screen.AllScreens.Length - 1);

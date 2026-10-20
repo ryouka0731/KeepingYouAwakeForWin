@@ -150,12 +150,6 @@ internal static class NativeMethods
     /// <summary>Offset of targetInfo.outputTechnology inside DISPLAYCONFIG_PATH_INFO.</summary>
     public const int PathOutputTechnologyOffset = 36;
 
-    public const uint OutputTechnologyLvds = 6;
-    public const uint OutputTechnologyDisplayPortEmbedded = 11;
-    public const uint OutputTechnologyUdiEmbedded = 13;
-    public const uint OutputTechnologyIndirectVirtual = 17;
-    public const uint OutputTechnologyInternal = 0x80000000;
-    public const uint OutputTechnologyOther = 0xFFFFFFFF;
 
     [DllImport("user32.dll")]
     public static extern int GetDisplayConfigBufferSizes(uint flags, out uint pathCount, out uint modeCount);
@@ -166,10 +160,6 @@ internal static class NativeMethods
     // ---- Wi-Fi (wlanapi) ----
 
     public const int WlanIntfOpcodeCurrentConnection = 7;
-    public const int WlanInterfaceStateConnected = 1;
-    public const int WlanInterfaceInfoSize = 532;
-    /// <summary>Offset of wlanAssociationAttributes.dot11Ssid inside WLAN_CONNECTION_ATTRIBUTES.</summary>
-    public const int ConnectionSsidOffset = 520;
 
     [DllImport("wlanapi.dll")]
     public static extern int WlanOpenHandle(uint clientVersion, IntPtr reserved, out uint negotiatedVersion, out IntPtr clientHandle);

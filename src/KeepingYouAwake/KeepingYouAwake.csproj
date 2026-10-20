@@ -17,6 +17,9 @@
     <EmbeddedResource Include="Resources\AppIcon.ico" LogicalName="AppIcon.ico" />
   </ItemGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="KeepingYouAwake.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\KeepingYouAwake.Core\KeepingYouAwake.Core.csproj" />
   </ItemGroup>
 </Project>

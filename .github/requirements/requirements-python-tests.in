@@ -4,3 +4,6 @@
 #     .github/requirements/requirements-python-tests.in -o .github/requirements/requirements-python-tests.txt
 pytest
 mcp>=1.0.0,<2
+pytest-cov
+# Complexity metrics (scripts/code_metrics.py)
+lizard

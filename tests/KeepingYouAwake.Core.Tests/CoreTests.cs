@@ -432,6 +432,7 @@ public class UpdateCheckerTests
     }
 }
 
+[Collection(StringsCollection.Name)]
 public class StringsTests
 {
     [Fact]

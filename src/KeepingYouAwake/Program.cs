@@ -4,6 +4,8 @@ using KeepingYouAwake.Windows;
 
 namespace KeepingYouAwake;
 
+/// <summary>Composition root. Excluded from unit-test coverage: the end-to-end tests run it as the real executable.</summary>
+[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 internal static class Program
 {
     [STAThread]
@@ -16,8 +18,8 @@ internal static class Program
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
         Application.ThreadException += (_, e) => ReportError(e.Exception);
 
-        ShellIntegration.RegisterUrlScheme();
-        ShellIntegration.RefreshStartAtLoginPath();
+        ShellIntegration.Current.RegisterUrlScheme();
+        ShellIntegration.Current.RefreshStartAtLoginPath();
 
         var store = new SettingsStore(SettingsStore.DefaultFilePath);
         var log = new ActivityLogger(ActivityLogger.DefaultFilePath);

@@ -221,10 +221,16 @@ public sealed class AppController : IDisposable
 
     #region Session lifecycle
 
-    private void Activate(TimeSpan? interval, ActivationSource source)
+    /// <summary>Indefinite for null / zero; null result for negative or longer-than-allowed intervals.</summary>
+    internal static bool TryNormalizeInterval(TimeSpan? interval, out TimeSpan? normalized)
     {
-        if (interval is { } i && (i < TimeSpan.Zero || i.TotalSeconds > ActivationDuration.MaximumSeconds)) { return; }
-        if (interval == TimeSpan.Zero) { interval = null; }
+        normalized = interval == TimeSpan.Zero ? null : interval;
+        return interval is not { } i || (i >= TimeSpan.Zero && i.TotalSeconds <= ActivationDuration.MaximumSeconds);
+    }
+
+    private void Activate(TimeSpan? requested, ActivationSource source)
+    {
+        if (!TryNormalizeInterval(requested, out var interval)) { return; }
 
         // Bumped first: the replaced session's end callback (raised by TerminateTimer
         // below) must not tear down side effects or announce "allowing sleep".
@@ -307,36 +313,43 @@ public sealed class AppController : IDisposable
     private void ReconcileSessionSideEffects(bool force = false)
     {
         if (!timer.IsScheduled && !force) { return; }
-        var s = Settings;
+        ReconcileJiggler(Settings.MouseJiggler);
+        ReconcileDiskKeepAlive(Settings.DriveAlive, Settings.PreventDiskSleep);
+        ReconcileDisplaySleep(Settings.AllowDisplaySleep);
+    }
 
-        if (s.MouseJiggler)
+    private void ReconcileJiggler(bool enabled)
+    {
+        if (enabled)
         {
             jiggler ??= new MouseJiggler(platform.Scheduler, platform.PointerNudger);
             jiggler.Start();
+            return;
         }
-        else
-        {
-            jiggler?.Stop();
-            jiggler = null;
-        }
+        jiggler?.Stop();
+        jiggler = null;
+    }
 
-        var wantDisks = s.DriveAlive || s.PreventDiskSleep;
-        if (driveAlive is not null && (!wantDisks || driveAlive.IncludesExternalDrives != s.DriveAlive))
+    /// <summary>Prevent disk sleep pings the system drive; Drive Alive also pings the other drives.</summary>
+    private void ReconcileDiskKeepAlive(bool otherDrives, bool systemDrive)
+    {
+        var wanted = otherDrives || systemDrive;
+        if (driveAlive is not null && (!wanted || driveAlive.IncludesExternalDrives != otherDrives))
         {
             driveAlive.Stop();
             driveAlive = null;
         }
-        if (wantDisks && driveAlive is null)
+        if (wanted && driveAlive is null)
         {
-            driveAlive = new DriveAliveTimer(platform.Scheduler, s.DriveAlive ? platform.DriveEnumerator : null);
+            driveAlive = new DriveAliveTimer(platform.Scheduler, otherDrives ? platform.DriveEnumerator : null);
             driveAlive.Start();
         }
+    }
 
-        if (s.AllowDisplaySleep != lastAllowDisplaySleep)
-        {
-            timer.Reacquire(s.AllowDisplaySleep);
-        }
-        lastAllowDisplaySleep = s.AllowDisplaySleep;
+    private void ReconcileDisplaySleep(bool allowDisplaySleep)
+    {
+        if (allowDisplaySleep != lastAllowDisplaySleep) { timer.Reacquire(allowDisplaySleep); }
+        lastAllowDisplaySleep = allowDisplaySleep;
     }
 
     private void TearDownSessionSideEffects()

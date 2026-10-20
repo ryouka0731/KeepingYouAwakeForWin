@@ -4,6 +4,14 @@ All notable changes to KeepingYouAwake for Windows are documented here. The form
 
 ## [Unreleased]
 
+### Added
+- `--quit` / `keepingyouawake:///quit` to close the app from scripts; `KEEPINGYOUAWAKE_DATA_DIR` to relocate settings and the activity log.
+- Component, platform, API (MCP over stdio, GitHub releases) and end-to-end tests; coverage and complexity gates in CI; [code metrics report](docs/code-metrics.md).
+
+### Changed
+- Win32 result decoding and the tray menu / tooltip moved into the platform-independent core; complex functions split up (max cyclomatic complexity 21 → 10).
+- Update-check User-Agent reports the version as `x.y.z`.
+
 ## [1.0.0] - 2026-10-21
 
 First release: a Windows port of [KeepingYouAwake (Amphetamine)](https://github.com/ryouka0731/KeepingYouAwake-Amphetamine) v1.7.0-amphetamine.11, rewritten in C# / .NET 10 (WinForms) for Windows 10 and 11.

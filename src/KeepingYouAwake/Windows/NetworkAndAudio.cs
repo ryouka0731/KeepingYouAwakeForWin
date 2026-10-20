@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using System.Text;
 using KeepingYouAwake.Core.Platform;
 using static KeepingYouAwake.Windows.NativeMethods;
 
@@ -15,7 +14,13 @@ internal enum WiFiReadStatus
     Unavailable,
 }
 
-internal readonly record struct WiFiReading(WiFiReadStatus Status, IReadOnlyList<string> Ssids);
+internal readonly record struct WiFiReading(WiFiReadStatus Status, IReadOnlyList<string> Ssids)
+{
+    /// <summary>The reading for the connected interfaces' SSIDs; none means not connected or hidden from this app.</summary>
+    public static WiFiReading From(IReadOnlyList<string> ssids, bool accessDenied) =>
+        ssids.Count > 0 ? new(WiFiReadStatus.Connected, ssids)
+        : new(accessDenied ? WiFiReadStatus.AccessDenied : WiFiReadStatus.NotConnected, []);
+}
 
 /// <summary>Reads the joined Wi-Fi networks through the Native Wifi API.</summary>
 internal sealed class WlanWiFiProbe : IWiFiProbe
@@ -26,56 +31,68 @@ internal sealed class WlanWiFiProbe : IWiFiProbe
     {
         try
         {
-            if (WlanOpenHandle(2, IntPtr.Zero, out _, out var client) != 0) { return new(WiFiReadStatus.Unavailable, []); }
-            try
-            {
-                if (WlanEnumInterfaces(client, IntPtr.Zero, out var list) != 0) { return new(WiFiReadStatus.Unavailable, []); }
-                try
-                {
-                    var count = Marshal.ReadInt32(list);
-                    if (count == 0) { return new(WiFiReadStatus.Unavailable, []); }
-                    var ssids = new List<string>();
-                    var denied = false;
-                    for (var i = 0; i < count; i++)
-                    {
-                        var info = list + 8 + i * WlanInterfaceInfoSize;
-                        var guid = Marshal.PtrToStructure<Guid>(info);
-                        var state = Marshal.ReadInt32(info + 16 + 512);
-                        if (state != WlanInterfaceStateConnected) { continue; }
-
-                        var result = WlanQueryInterface(client, ref guid, WlanIntfOpcodeCurrentConnection, IntPtr.Zero,
-                            out _, out var data, out _);
-                        if (result == ErrorAccessDenied) { denied = true; continue; }
-                        if (result != 0) { continue; }
-                        try
-                        {
-                            var length = Math.Min(32, Marshal.ReadInt32(data + ConnectionSsidOffset));
-                            var bytes = new byte[length];
-                            Marshal.Copy(data + ConnectionSsidOffset + 4, bytes, 0, length);
-                            if (length > 0) { ssids.Add(Encoding.UTF8.GetString(bytes)); }
-                            else { denied = true; } // redacted SSID
-                        }
-                        finally { WlanFreeMemory(data); }
-                    }
-                    if (ssids.Count > 0) { return new(WiFiReadStatus.Connected, ssids); }
-                    return new(denied ? WiFiReadStatus.AccessDenied : WiFiReadStatus.NotConnected, []);
-                }
-                finally { WlanFreeMemory(list); }
-            }
+            if (WlanOpenHandle(2, IntPtr.Zero, out _, out var client) != 0) { return Unavailable; }
+            try { return ReadInterfaces(client); }
             finally { WlanCloseHandle(client, IntPtr.Zero); }
         }
         catch (DllNotFoundException)
         {
-            return new(WiFiReadStatus.Unavailable, []); // Windows Server without the WLAN feature
+            return Unavailable; // Windows Server without the WLAN feature
         }
+    }
+
+    private static readonly WiFiReading Unavailable = new(WiFiReadStatus.Unavailable, []);
+
+    private static WiFiReading ReadInterfaces(IntPtr client)
+    {
+        if (WlanEnumInterfaces(client, IntPtr.Zero, out var list) != 0) { return Unavailable; }
+        IReadOnlyList<(Guid Interface, bool Connected)> interfaces;
+        try
+        {
+            var count = Marshal.ReadInt32(list);
+            interfaces = WindowsDecoding.ParseWlanInterfaceList(
+                Copy(list, WindowsDecoding.WlanInterfaceListHeaderSize + count * WindowsDecoding.WlanInterfaceInfoSize));
+        }
+        finally { WlanFreeMemory(list); }
+        if (interfaces.Count == 0) { return Unavailable; }
+
+        var ssids = new List<string>();
+        var denied = false;
+        foreach (var (guid, _) in interfaces.Where(i => i.Connected))
+        {
+            var ssid = QuerySsid(client, guid, out var accessDenied);
+            denied |= accessDenied;
+            if (ssid is not null) { ssids.Add(ssid); }
+        }
+        return WiFiReading.From(ssids, denied);
+    }
+
+    /// <summary>The SSID of a connected interface; null with <paramref name="accessDenied"/> when Windows hides it.</summary>
+    private static string? QuerySsid(IntPtr client, Guid interfaceGuid, out bool accessDenied)
+    {
+        var result = WlanQueryInterface(client, ref interfaceGuid, WlanIntfOpcodeCurrentConnection, IntPtr.Zero, out var size, out var data, out _);
+        accessDenied = result == ErrorAccessDenied;
+        if (result != 0) { return null; }
+        try
+        {
+            var ssid = WindowsDecoding.ParseConnectionSsid(Copy(data, (int)size));
+            accessDenied |= ssid is null; // redacted
+            return ssid;
+        }
+        finally { WlanFreeMemory(data); }
+    }
+
+    private static byte[] Copy(IntPtr source, int length)
+    {
+        var bytes = new byte[Math.Max(0, length)];
+        Marshal.Copy(source, bytes, 0, bytes.Length);
+        return bytes;
     }
 }
 
 /// <summary>Classifies the default playback device through Core Audio (MMDevice API).</summary>
 internal sealed class CoreAudioProbe : IAudioOutputProbe
 {
-    private static readonly string[] ExternalEnumerators = ["USB", "BTHENUM", "BTHHFENUM", "BTHLEDEVICE", "BTHLE"];
-
     public bool? IsDefaultOutputExternal()
     {
         IMMDeviceEnumerator? enumerator = null;
@@ -89,16 +106,9 @@ internal sealed class CoreAudioProbe : IAudioOutputProbe
                 return false; // no playback device at all
             }
             if (device.OpenPropertyStore(0, out store) != 0 || store is null) { return null; }
-
-            var enumeratorName = ReadString(store, PropertyKeys.DeviceEnumeratorName);
-            if (enumeratorName is not null
-                && ExternalEnumerators.Any(e => enumeratorName.StartsWith(e, StringComparison.OrdinalIgnoreCase)))
-            {
-                return true;
-            }
-            var formFactor = ReadUInt(store, PropertyKeys.AudioEndpointFormFactor);
-            // RemoteNetworkDevice (0) and DigitalAudioDisplayDevice (9, HDMI / DisplayPort monitors).
-            return formFactor is 0 or 9;
+            return WindowsDecoding.IsExternalAudioEndpoint(
+                ReadString(store, PropertyKeys.DeviceEnumeratorName),
+                ReadUInt(store, PropertyKeys.AudioEndpointFormFactor));
         }
         catch (COMException)
         {
@@ -106,10 +116,15 @@ internal sealed class CoreAudioProbe : IAudioOutputProbe
         }
         finally
         {
-            if (store is not null) { Marshal.ReleaseComObject(store); }
-            if (device is not null) { Marshal.ReleaseComObject(device); }
-            if (enumerator is not null) { Marshal.ReleaseComObject(enumerator); }
+            Release(store);
+            Release(device);
+            Release(enumerator);
         }
+    }
+
+    private static void Release(object? comObject)
+    {
+        if (comObject is not null) { Marshal.ReleaseComObject(comObject); }
     }
 
     private static string? ReadString(IPropertyStore store, PropertyKey key)

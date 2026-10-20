@@ -206,6 +206,7 @@ internal sealed class ActivityLogForm : Form
 
         Controls.Add(view);
         Controls.Add(buttons);
+        Load += (_, _) => Reload();
         Activated += (_, _) => Reload();
     }
 
