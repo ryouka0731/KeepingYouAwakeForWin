@@ -27,14 +27,17 @@ BEGIN, END = "<!-- metrics:begin -->", "<!-- metrics:end -->"
 
 # Minimums enforced by --check (percent). Raise them as coverage grows.
 THRESHOLDS = {
-    ("dotnet", "KeepingYouAwake.Core", "line"): 95.0,
-    ("dotnet", "KeepingYouAwake.Core", "branch"): 85.0,
-    ("dotnet", "KeepingYouAwake", "line"): 60.0,
-    ("python", "*", "line"): 95.0,
+    ("dotnet", "KeepingYouAwake.Core", "line"): 97.0,
+    ("dotnet", "KeepingYouAwake.Core", "branch"): 90.0,
+    ("dotnet", "KeepingYouAwake", "line"): 80.0,
+    ("dotnet", "KeepingYouAwake", "branch"): 55.0,
+    ("python", "*", "line"): 97.0,
+    ("python", "*", "branch"): 95.0,
 }
 # Complexity limits enforced by --check: no function may exceed these.
-MAX_CCN = 15
-MAX_FUNCTION_NLOC = 80
+MAX_CCN = 10
+MAX_FUNCTION_NLOC = 50
+MAX_PARAMETERS = 5
 
 SOURCE_DIRS = ["src", "tools/cli", "tools/mcp-server"]
 EXCLUDE = ["*/tests/*", "*/bin/*", "*/obj/*", "*/e2e/*"]
@@ -198,6 +201,8 @@ def check(dotnet: list[Coverage], python: list[Coverage], functions: list[Functi
             failures.append(f"{f.name} ({f.file}:{f.line}) has CCN {f.ccn} > {MAX_CCN}")
         if f.nloc > MAX_FUNCTION_NLOC:
             failures.append(f"{f.name} ({f.file}:{f.line}) has {f.nloc} NLOC > {MAX_FUNCTION_NLOC}")
+        if f.params > MAX_PARAMETERS:
+            failures.append(f"{f.name} ({f.file}:{f.line}) has {f.params} parameters > {MAX_PARAMETERS}")
     return failures
 
 
