@@ -113,9 +113,9 @@ internal sealed class WindowsPowerSource : IPowerSource, IDisposable
         poll.Dispose();
     }
 
-    private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e) => UiThread.Post(Refresh);
+    internal void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e) => UiThread.Post(Refresh);
 
-    private void Refresh()
+    internal void Refresh()
     {
         var status = Read();
         if (status == Current) { return; }
@@ -139,7 +139,7 @@ internal sealed class WindowsSessionEvents : ISessionEvents, IDisposable
 
     public void Dispose() => SystemEvents.SessionSwitch -= OnSessionSwitch;
 
-    private void OnSessionSwitch(object sender, SessionSwitchEventArgs e)
+    internal void OnSessionSwitch(object sender, SessionSwitchEventArgs e)
     {
         switch (e.Reason)
         {
@@ -169,7 +169,7 @@ internal sealed class DisplayConfigMonitor : IDisplayMonitor, IDisposable
 
     public void Dispose() => SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
 
-    private void OnDisplaySettingsChanged(object? sender, EventArgs e) => UiThread.Post(() =>
+    internal void OnDisplaySettingsChanged(object? sender, EventArgs e) => UiThread.Post(() =>
     {
         var count = Count();
         if (count == ExternalDisplayCount) { return; }

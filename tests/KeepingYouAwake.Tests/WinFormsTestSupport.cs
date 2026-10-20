@@ -85,12 +85,13 @@ internal sealed class TrayHarness : IDisposable
 {
     private readonly RegistrySandbox registry = new();
 
-    public TrayHarness(Action<AppSettings>? configure = null)
+    public TrayHarness(Action<AppSettings>? configure = null, HttpMessageHandler? updateHandler = null)
     {
         Fakes = new ControllerHarness(configure);
         // The harness's own controller isn't used; the tray builds one on the same fakes.
         Fakes.Controller.Dispose();
-        Context = new TrayApplicationContext(Fakes.Store, Fakes.Log, Platform, registry.Shell, backgroundUpdateChecks: false);
+        Context = new TrayApplicationContext(Fakes.Store, Fakes.Log, Platform, registry.Shell, backgroundUpdateChecks: false,
+            updateHandler ?? new FakeReleasesHandler("[]"));
     }
 
     public ControllerHarness Fakes { get; }

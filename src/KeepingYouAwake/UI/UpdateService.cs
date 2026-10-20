@@ -9,13 +9,18 @@ internal sealed class UpdateService : IDisposable
 {
     private static readonly TimeSpan CheckInterval = TimeSpan.FromDays(1);
     private readonly SettingsStore store;
-    private readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(20) };
+    private readonly HttpClient http;
+    private readonly string repository;
     private readonly Timer timer = new() { Interval = (int)TimeSpan.FromHours(1).TotalMilliseconds };
     private Task<ReleaseInfo?>? inFlight;
 
-    public UpdateService(SettingsStore store)
+    /// <param name="handler">HTTP handler (tests); null for the default network stack.</param>
+    public UpdateService(SettingsStore store, HttpMessageHandler? handler = null, string repository = UpdateChecker.DefaultRepository)
     {
         this.store = store;
+        this.repository = repository;
+        http = handler is null ? new HttpClient() : new HttpClient(handler);
+        http.Timeout = TimeSpan.FromSeconds(20);
         timer.Tick += async (_, _) => await CheckIfDueAsync();
     }
 
@@ -40,7 +45,8 @@ internal sealed class UpdateService : IDisposable
         initial.Start();
     }
 
-    private async Task CheckIfDueAsync()
+    /// <summary>Runs a check when automatic checks are on and the last success is a day old. Network errors are swallowed.</summary>
+    internal async Task CheckIfDueAsync()
     {
         var settings = store.Settings;
         if (!settings.AutomaticallyCheckForUpdates) { return; }
@@ -70,7 +76,7 @@ internal sealed class UpdateService : IDisposable
 
         async Task<ReleaseInfo?> Run()
         {
-            var release = await new UpdateChecker(http).FindUpdateAsync(CurrentVersion, store.Settings.PreReleaseUpdates);
+            var release = await new UpdateChecker(http, repository).FindUpdateAsync(CurrentVersion, store.Settings.PreReleaseUpdates);
             store.Update(s => s.LastUpdateCheck = DateTimeOffset.Now);
             return release;
         }

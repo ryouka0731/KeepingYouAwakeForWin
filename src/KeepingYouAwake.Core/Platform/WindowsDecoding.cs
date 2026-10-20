@@ -71,6 +71,39 @@ public static class WindowsDecoding
         return formFactor is FormFactorRemoteNetworkDevice or FormFactorDigitalAudioDisplayDevice;
     }
 
+    // Native Wifi layouts (wlanapi.h), identical on x64 and ARM64.
+    public const int WlanInterfaceListHeaderSize = 8;     // dwNumberOfItems, dwIndex
+    public const int WlanInterfaceInfoSize = 532;         // GUID + WCHAR[256] + WLAN_INTERFACE_STATE
+    private const int WlanInterfaceStateOffset = 16 + 512;
+    private const int WlanInterfaceStateConnected = 1;
+    /// <summary>Offset of wlanAssociationAttributes.dot11Ssid in WLAN_CONNECTION_ATTRIBUTES.</summary>
+    public const int WlanConnectionSsidOffset = 520;
+
+    /// <summary>The interfaces in a <c>WLAN_INTERFACE_INFO_LIST</c> and whether each is connected.</summary>
+    public static IReadOnlyList<(Guid Interface, bool Connected)> ParseWlanInterfaceList(ReadOnlySpan<byte> list)
+    {
+        if (list.Length < WlanInterfaceListHeaderSize) { return []; }
+        var count = BitConverter.ToInt32(list);
+        var available = (list.Length - WlanInterfaceListHeaderSize) / WlanInterfaceInfoSize;
+        var result = new List<(Guid, bool)>();
+        for (var i = 0; i < Math.Min(count, available); i++)
+        {
+            var info = list.Slice(WlanInterfaceListHeaderSize + i * WlanInterfaceInfoSize, WlanInterfaceInfoSize);
+            var connected = BitConverter.ToInt32(info[WlanInterfaceStateOffset..]) == WlanInterfaceStateConnected;
+            result.Add((new Guid(info[..16]), connected));
+        }
+        return result;
+    }
+
+    /// <summary>The SSID in a <c>WLAN_CONNECTION_ATTRIBUTES</c>; null when missing, empty or redacted.</summary>
+    public static string? ParseConnectionSsid(ReadOnlySpan<byte> attributes)
+    {
+        if (attributes.Length < WlanConnectionSsidOffset + 4) { return null; }
+        var length = Math.Clamp(BitConverter.ToInt32(attributes[WlanConnectionSsidOffset..]), 0, 32);
+        var bytes = attributes[(WlanConnectionSsidOffset + 4)..];
+        return DecodeSsid(bytes[..Math.Min(length, bytes.Length)]);
+    }
+
     /// <summary>Decodes a <c>DOT11_SSID</c>; null when empty (hidden or redacted).</summary>
     public static string? DecodeSsid(ReadOnlySpan<byte> ssid)
     {

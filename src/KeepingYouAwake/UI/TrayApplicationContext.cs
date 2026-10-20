@@ -32,8 +32,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
     /// <param name="platform">OS services; null for the real Windows implementations.</param>
     /// <param name="shell">Registry integration; null for HKEY_CURRENT_USER.</param>
     /// <param name="backgroundUpdateChecks">Whether to start the daily GitHub check.</param>
+    /// <param name="updateHandler">HTTP handler for update checks (tests); null for the network.</param>
     public TrayApplicationContext(SettingsStore store, ActivityLogger log, PlatformServices? platform = null,
-        ShellIntegration? shell = null, bool backgroundUpdateChecks = true)
+        ShellIntegration? shell = null, bool backgroundUpdateChecks = true, HttpMessageHandler? updateHandler = null)
     {
         this.store = store;
         this.log = log;
@@ -65,7 +66,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         NetworkChange.NetworkAddressChanged += OnNetworkAddressChanged;
         settingsWatcher = WatchSettingsFile();
 
-        updates = new UpdateService(store);
+        updates = new UpdateService(store, updateHandler);
         updates.UpdateFound += (_, release) => ShowUpdateNotification(release);
 
         Controller.Start();
@@ -145,7 +146,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
         notifyIcon.ShowBalloonTip(10_000, title, body, ToolTipIcon.Info);
     }
 
-    private void OnUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
+    internal UpdateService Updates => updates;
+    internal string? PendingUpdateUrl => pendingUpdateUrl;
+
+    internal void OnUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
     {
         if (e.Category is not (UserPreferenceCategory.General or UserPreferenceCategory.Color or UserPreferenceCategory.VisualStyle)) { return; }
         UiThread.Post(() =>
@@ -158,9 +162,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
     }
 
     /// <summary>Sign-out / shutdown: clean up (log entry, drive ping files) like a normal quit.</summary>
-    private void OnSessionEnding(object sender, SessionEndingEventArgs e) => UiThread.Post(Quit);
+    internal void OnSessionEnding(object sender, SessionEndingEventArgs e) => UiThread.Post(Quit);
 
-    private void OnNetworkAddressChanged(object? sender, EventArgs e) => UiThread.Post(() =>
+    internal void OnNetworkAddressChanged(object? sender, EventArgs e) => UiThread.Post(() =>
     {
         if (!exiting) { Controller.NetworkChanged(); }
     });

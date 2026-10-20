@@ -354,3 +354,55 @@ public class SmallHelperTests
         Assert.Equal(new ActivityLogEntry(at, null, "user", -1, null), new ActivityLogEntry(at, null, "user", -1, null));
     }
 }
+
+public class WlanParsingTests
+{
+    private static byte[] InterfaceList(params (Guid Id, int State)[] interfaces)
+    {
+        var buffer = new byte[WindowsDecoding.WlanInterfaceListHeaderSize + interfaces.Length * WindowsDecoding.WlanInterfaceInfoSize];
+        BitConverter.TryWriteBytes(buffer.AsSpan(0, 4), interfaces.Length);
+        for (var i = 0; i < interfaces.Length; i++)
+        {
+            var info = buffer.AsSpan(WindowsDecoding.WlanInterfaceListHeaderSize + i * WindowsDecoding.WlanInterfaceInfoSize);
+            interfaces[i].Id.TryWriteBytes(info);
+            BitConverter.TryWriteBytes(info.Slice(16 + 512, 4), interfaces[i].State);
+        }
+        return buffer;
+    }
+
+    private static byte[] ConnectionAttributes(string ssid, int? lengthOverride = null)
+    {
+        var buffer = new byte[WindowsDecoding.WlanConnectionSsidOffset + 4 + 32 + 64];
+        var bytes = System.Text.Encoding.UTF8.GetBytes(ssid);
+        BitConverter.TryWriteBytes(buffer.AsSpan(WindowsDecoding.WlanConnectionSsidOffset, 4), lengthOverride ?? bytes.Length);
+        bytes.CopyTo(buffer, WindowsDecoding.WlanConnectionSsidOffset + 4);
+        return buffer;
+    }
+
+    [Fact]
+    public void ParsesInterfacesAndTheirState()
+    {
+        var a = Guid.NewGuid();
+        var b = Guid.NewGuid();
+        var parsed = WindowsDecoding.ParseWlanInterfaceList(InterfaceList((a, 1), (b, 4)));
+        Assert.Equal([(a, true), (b, false)], parsed);
+    }
+
+    [Fact]
+    public void TruncatedOrEmptyListsAreSafe()
+    {
+        Assert.Empty(WindowsDecoding.ParseWlanInterfaceList([]));
+        var list = InterfaceList((Guid.NewGuid(), 1), (Guid.NewGuid(), 1));
+        Assert.Single(WindowsDecoding.ParseWlanInterfaceList(list.AsSpan(0, list.Length - 10))); // count says 2, room for 1
+    }
+
+    [Fact]
+    public void ParsesTheConnectedSsid()
+    {
+        Assert.Equal("Office-5G", WindowsDecoding.ParseConnectionSsid(ConnectionAttributes("Office-5G")));
+        Assert.Null(WindowsDecoding.ParseConnectionSsid(ConnectionAttributes(""))); // redacted
+        Assert.Equal("ab", WindowsDecoding.ParseConnectionSsid(ConnectionAttributes("abc", lengthOverride: 2)));
+        Assert.Equal(32, WindowsDecoding.ParseConnectionSsid(ConnectionAttributes(new string('x', 32), lengthOverride: 99))!.Length);
+        Assert.Null(WindowsDecoding.ParseConnectionSsid(new byte[100])); // too short
+    }
+}

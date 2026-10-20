@@ -4,6 +4,8 @@ using KeepingYouAwake.Windows;
 
 namespace KeepingYouAwake;
 
+/// <summary>Composition root. Excluded from unit-test coverage: the end-to-end tests run it as the real executable.</summary>
+[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 internal static class Program
 {
     [STAThread]

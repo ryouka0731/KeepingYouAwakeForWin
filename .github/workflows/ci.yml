@@ -90,7 +90,7 @@ jobs:
         run: >-
           dotnet tool run reportgenerator "-reports:TestResults/**/coverage.cobertura.xml"
           -targetdir:coverage "-reporttypes:Cobertura;HtmlSummary;MarkdownSummaryGithub"
-          "-assemblyfilters:+KeepingYouAwake;+KeepingYouAwake.Core"
+          "-assemblyfilters:+KeepingYouAwake;+KeepingYouAwake.Core" "-filefilters:-**/obj/**"
 
       - name: End-to-end tests (published app)
         # Publishes the self-contained exe and drives it like a user: the kya CLI

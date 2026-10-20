@@ -14,7 +14,13 @@ internal enum WiFiReadStatus
     Unavailable,
 }
 
-internal readonly record struct WiFiReading(WiFiReadStatus Status, IReadOnlyList<string> Ssids);
+internal readonly record struct WiFiReading(WiFiReadStatus Status, IReadOnlyList<string> Ssids)
+{
+    /// <summary>The reading for the connected interfaces' SSIDs; none means not connected or hidden from this app.</summary>
+    public static WiFiReading From(IReadOnlyList<string> ssids, bool accessDenied) =>
+        ssids.Count > 0 ? new(WiFiReadStatus.Connected, ssids)
+        : new(accessDenied ? WiFiReadStatus.AccessDenied : WiFiReadStatus.NotConnected, []);
+}
 
 /// <summary>Reads the joined Wi-Fi networks through the Native Wifi API.</summary>
 internal sealed class WlanWiFiProbe : IWiFiProbe
@@ -40,43 +46,47 @@ internal sealed class WlanWiFiProbe : IWiFiProbe
     private static WiFiReading ReadInterfaces(IntPtr client)
     {
         if (WlanEnumInterfaces(client, IntPtr.Zero, out var list) != 0) { return Unavailable; }
+        IReadOnlyList<(Guid Interface, bool Connected)> interfaces;
         try
         {
             var count = Marshal.ReadInt32(list);
-            if (count == 0) { return Unavailable; }
-            var ssids = new List<string>();
-            var denied = false;
-            for (var i = 0; i < count; i++)
-            {
-                var info = list + 8 + i * WlanInterfaceInfoSize;
-                if (Marshal.ReadInt32(info + 16 + 512) != WlanInterfaceStateConnected) { continue; }
-                var guid = Marshal.PtrToStructure<Guid>(info);
-                var ssid = QuerySsid(client, guid, out var accessDenied);
-                denied |= accessDenied;
-                if (ssid is not null) { ssids.Add(ssid); }
-            }
-            if (ssids.Count > 0) { return new(WiFiReadStatus.Connected, ssids); }
-            return new(denied ? WiFiReadStatus.AccessDenied : WiFiReadStatus.NotConnected, []);
+            interfaces = WindowsDecoding.ParseWlanInterfaceList(
+                Copy(list, WindowsDecoding.WlanInterfaceListHeaderSize + count * WindowsDecoding.WlanInterfaceInfoSize));
         }
         finally { WlanFreeMemory(list); }
+        if (interfaces.Count == 0) { return Unavailable; }
+
+        var ssids = new List<string>();
+        var denied = false;
+        foreach (var (guid, _) in interfaces.Where(i => i.Connected))
+        {
+            var ssid = QuerySsid(client, guid, out var accessDenied);
+            denied |= accessDenied;
+            if (ssid is not null) { ssids.Add(ssid); }
+        }
+        return WiFiReading.From(ssids, denied);
     }
 
     /// <summary>The SSID of a connected interface; null with <paramref name="accessDenied"/> when Windows hides it.</summary>
     private static string? QuerySsid(IntPtr client, Guid interfaceGuid, out bool accessDenied)
     {
-        var result = WlanQueryInterface(client, ref interfaceGuid, WlanIntfOpcodeCurrentConnection, IntPtr.Zero, out _, out var data, out _);
+        var result = WlanQueryInterface(client, ref interfaceGuid, WlanIntfOpcodeCurrentConnection, IntPtr.Zero, out var size, out var data, out _);
         accessDenied = result == ErrorAccessDenied;
         if (result != 0) { return null; }
         try
         {
-            var length = Math.Clamp(Marshal.ReadInt32(data + ConnectionSsidOffset), 0, 32);
-            var bytes = new byte[length];
-            Marshal.Copy(data + ConnectionSsidOffset + 4, bytes, 0, length);
-            var ssid = WindowsDecoding.DecodeSsid(bytes);
+            var ssid = WindowsDecoding.ParseConnectionSsid(Copy(data, (int)size));
             accessDenied |= ssid is null; // redacted
             return ssid;
         }
         finally { WlanFreeMemory(data); }
+    }
+
+    private static byte[] Copy(IntPtr source, int length)
+    {
+        var bytes = new byte[Math.Max(0, length)];
+        Marshal.Copy(source, bytes, 0, bytes.Length);
+        return bytes;
     }
 }
 
