@@ -1,0 +1,572 @@
+using KeepingYouAwake.Core;
+using KeepingYouAwake.Windows;
+
+namespace KeepingYouAwake.UI;
+
+/// <summary>The Settings window. Every control writes straight to <see cref="SettingsStore"/>; changes apply immediately.</summary>
+internal sealed class SettingsForm : Form
+{
+    private readonly SettingsStore store;
+    private readonly ActivationDurationsController durations;
+    private readonly UpdateService updates;
+    private readonly List<Action> refreshers = [];
+    private bool refreshing;
+
+    public SettingsForm(SettingsStore store, ActivationDurationsController durations, UpdateService updates)
+    {
+        this.store = store;
+        this.durations = durations;
+        this.updates = updates;
+
+        Text = Strings.Get("SettingsTitle");
+        Icon = TrayIcons.AppIcon();
+        StartPosition = FormStartPosition.CenterScreen;
+        AutoScaleMode = AutoScaleMode.Dpi;
+        Font = SystemFonts.MessageBoxFont ?? Font;
+        ClientSize = new Size(560, 600);
+        MinimumSize = new Size(480, 400);
+        ShowInTaskbar = true;
+
+        var tabs = new TabControl { Dock = DockStyle.Fill };
+        tabs.TabPages.AddRange(
+        [
+            Ui.Page(Strings.Get("TabGeneral"), BuildGeneral()),
+            Ui.Page(Strings.Get("TabDurations"), BuildDurations()),
+            Ui.Page(Strings.Get("TabBattery"), BuildBattery()),
+            Ui.Page(Strings.Get("TabWatchedItems"), BuildWatchedItems()),
+            Ui.Page(Strings.Get("TabAdvanced"), BuildAdvanced()),
+            Ui.Page(Strings.Get("TabUpdates"), BuildUpdates()),
+            Ui.Page(Strings.Get("TabAbout"), BuildAbout()),
+        ]);
+        Controls.Add(tabs);
+
+        store.Changed += OnStoreChanged;
+        FormClosed += (_, _) => store.Changed -= OnStoreChanged;
+        RefreshAll();
+    }
+
+    private void OnStoreChanged(object? sender, EventArgs e) => RefreshAll();
+
+    private void RefreshAll()
+    {
+        refreshing = true;
+        try { foreach (var refresh in refreshers) { refresh(); } }
+        finally { refreshing = false; }
+    }
+
+    private void Update(Action<AppSettings> change)
+    {
+        if (!refreshing) { store.Update(change); }
+    }
+
+    /// <summary>A checkbox bound to a boolean setting.</summary>
+    private CheckBox Bound(string label, Func<AppSettings, bool> get, Action<AppSettings, bool> set)
+    {
+        var box = Ui.Check(label);
+        box.CheckedChanged += (_, _) => Update(s => set(s, box.Checked));
+        refreshers.Add(() => box.Checked = get(store.Settings));
+        return box;
+    }
+
+    #region General
+
+    private Control BuildGeneral()
+    {
+        var column = Ui.Column();
+
+        var startAtLogin = Ui.Check(Strings.Get("StartAtLogin"));
+        startAtLogin.Checked = ShellIntegration.IsStartAtLoginEnabled;
+        startAtLogin.CheckedChanged += (_, _) =>
+        {
+            try { ShellIntegration.SetStartAtLogin(startAtLogin.Checked); }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or System.Security.SecurityException)
+            {
+                MessageBox.Show(this, ex.Message, Strings.Get("AppName"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            startAtLogin.Checked = ShellIntegration.IsStartAtLoginEnabled;
+        };
+        column.Controls.Add(startAtLogin);
+        column.Controls.Add(Ui.Hint(Strings.Get("StartAtLoginHint")));
+
+        column.Controls.Add(Bound(Strings.Get("ActivateOnLaunch"), s => s.ActivateOnLaunch, (s, v) => s.ActivateOnLaunch = v));
+        column.Controls.Add(Ui.Hint(Strings.Get("ActivateOnLaunchHint")));
+        column.Controls.Add(Bound(Strings.Get("ShowNotifications"), s => s.ShowNotifications, (s, v) => s.ShowNotifications = v));
+        column.Controls.Add(Ui.Text(string.Empty));
+        column.Controls.Add(Ui.Text(Strings.Get("LeftClickHint")));
+        return column;
+    }
+
+    #endregion
+
+    #region Durations
+
+    private Control BuildDurations()
+    {
+        var column = Ui.Column();
+        column.Controls.Add(Ui.Text(Strings.Get("DurationsHint")));
+
+        var list = new ListBox { Width = 320, Height = 240, IntegralHeight = false, Margin = new Padding(0, 6, 0, 6) };
+        column.Controls.Add(list);
+
+        var buttons = Ui.Row();
+        ActivationDuration? Selected() =>
+            list.SelectedIndex >= 0 && list.SelectedIndex < durations.Durations.Count ? durations.Durations[list.SelectedIndex] : null;
+
+        buttons.Controls.Add(Ui.Button(Strings.Get("Add"), (_, _) =>
+        {
+            using var dialog = new AddDurationDialog();
+            if (dialog.ShowDialog(this) != DialogResult.OK || dialog.Duration is not { } duration) { return; }
+            if (!durations.Add(duration))
+            {
+                MessageBox.Show(this, Strings.Get("DurationAlreadyAdded"), Strings.Get("AddDuration"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        }));
+        var remove = Ui.Button(Strings.Get("Remove"), (_, _) =>
+        {
+            if (Selected() is { } d) { durations.Remove(d); }
+        });
+        var setDefault = Ui.Button(Strings.Get("SetDefault"), (_, _) =>
+        {
+            if (Selected() is { } d) { durations.Default = d; }
+        });
+        buttons.Controls.Add(remove);
+        buttons.Controls.Add(setDefault);
+        buttons.Controls.Add(Ui.Button(Strings.Get("ResetEllipsis"), (_, _) =>
+        {
+            var answer = MessageBox.Show(this, Strings.Get("ResetDurationsMessage"), Strings.Get("ResetDurationsTitle"),
+                MessageBoxButtons.OKCancel, MessageBoxIcon.Question);
+            if (answer == DialogResult.OK) { durations.Reset(); }
+        }));
+        column.Controls.Add(buttons);
+
+        void UpdateButtons()
+        {
+            var selected = Selected();
+            remove.Enabled = selected is { IsIndefinite: false };
+            setDefault.Enabled = selected is not null && selected != durations.Default;
+        }
+        list.SelectedIndexChanged += (_, _) => UpdateButtons();
+
+        refreshers.Add(() =>
+        {
+            var index = list.SelectedIndex;
+            list.BeginUpdate();
+            list.Items.Clear();
+            foreach (var d in durations.Durations)
+            {
+                var title = Strings.DurationTitle(d);
+                list.Items.Add(d == durations.Default ? $"{title} {Strings.Get("IsDefaultSuffix")}" : title);
+            }
+            list.EndUpdate();
+            if (index >= 0) { list.SelectedIndex = Math.Min(index, list.Items.Count - 1); }
+            UpdateButtons();
+        });
+        return column;
+    }
+
+    #endregion
+
+    #region Battery
+
+    private Control BuildBattery()
+    {
+        var column = Ui.Column();
+        var status = Ui.Text(string.Empty);
+        column.Controls.Add(status);
+
+        column.Controls.Add(Bound(Strings.Get("BatteryThreshold"), s => s.BatteryCapacityThresholdEnabled, (s, v) => s.BatteryCapacityThresholdEnabled = v));
+        var row = Ui.Row();
+        row.Margin = new Padding(20, 0, 0, 0);
+        var slider = new TrackBar
+        {
+            Minimum = (int)AppSettings.MinimumBatteryThreshold,
+            Maximum = (int)AppSettings.MaximumBatteryThreshold,
+            TickFrequency = 10,
+            SmallChange = 5,
+            LargeChange = 10,
+            Width = 300,
+        };
+        var value = new Label { AutoSize = true, Margin = new Padding(6, 8, 0, 0) };
+        slider.ValueChanged += (_, _) =>
+        {
+            value.Text = $"{slider.Value} %";
+            Update(s => s.BatteryCapacityThreshold = slider.Value);
+        };
+        row.Controls.Add(slider);
+        row.Controls.Add(value);
+        column.Controls.Add(row);
+        column.Controls.Add(Ui.Hint(Strings.Get("BatteryThresholdHint")));
+
+        column.Controls.Add(Bound(Strings.Get("BatterySaver"), s => s.BatterySaverMonitoringEnabled, (s, v) => s.BatterySaverMonitoringEnabled = v));
+        column.Controls.Add(Ui.Hint(Strings.Get("BatterySaverHint")));
+        column.Controls.Add(Bound(Strings.Get("DeactivateOnFullCharge"), s => s.DeactivateOnFullCharge, (s, v) => s.DeactivateOnFullCharge = v));
+
+        refreshers.Add(() =>
+        {
+            var settings = store.Settings;
+            slider.Value = (int)Math.Round(settings.EffectiveBatteryThreshold);
+            value.Text = $"{slider.Value} %";
+            slider.Enabled = settings.BatteryCapacityThresholdEnabled;
+            var power = WindowsPowerSource.Read();
+            status.Text = power.State == Core.Platform.BatteryState.Unknown
+                ? Strings.Get("NoBattery")
+                : Strings.Format("BatteryStatusFormat", power.CapacityPercent);
+        });
+        return column;
+    }
+
+    #endregion
+
+    #region Watched items
+
+    private Control BuildWatchedItems()
+    {
+        var column = Ui.Column();
+
+        // Wi-Fi
+        var wifi = new WatchedListSection(this, Strings.Get("WatchedWiFi"), Strings.Get("WatchedWiFiHint"),
+            s => s.WatchedWiFiSsids, (s, v) => s.WatchedWiFiSsids = v,
+            s => s.DisabledWatchedWiFiSsids, (s, v) => s.DisabledWatchedWiFiSsids = v);
+        wifi.AddButton.Click += (_, _) => ShowWiFiAddMenu(wifi);
+        wifi.AddTo(column);
+
+        // Applications
+        var apps = new WatchedListSection(this, Strings.Get("WatchedApplications"), Strings.Get("WatchedApplicationsHint"),
+            s => s.WatchedApplications, (s, v) => s.WatchedApplications = v,
+            s => s.DisabledWatchedApplications, (s, v) => s.DisabledWatchedApplications = v);
+        apps.AddButton.Click += (_, _) =>
+        {
+            var menu = DisposableMenu();
+            menu.Items.Add(Strings.Get("ChooseApplicationFile"), null, (_, _) =>
+            {
+                using var dialog = new OpenFileDialog
+                {
+                    Title = Strings.Get("ChooseApplication"),
+                    Filter = Strings.Get("ApplicationFilter"),
+                    InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                };
+                if (dialog.ShowDialog(this) == DialogResult.OK) { apps.Add(WatchedItems.NormalizeExecutableName(dialog.FileName)); }
+            });
+            menu.Items.Add(Strings.Get("ChooseRunningApplication"), null, (_, _) =>
+            {
+                using var dialog = new RunningAppDialog();
+                if (dialog.ShowDialog(this) == DialogResult.OK && dialog.SelectedExecutable is { } exe) { apps.Add(exe); }
+            });
+            menu.Show(apps.AddButton, new Point(0, apps.AddButton.Height));
+        };
+        apps.AddTo(column);
+
+        // Download folders
+        var downloads = new WatchedListSection(this, Strings.Get("WatchedDownloadFolders"), Strings.Get("WatchedDownloadFoldersHint"),
+            s => s.DownloadDirectories ?? [],
+            // Removing the last folder goes back to watching the Downloads folder.
+            (s, v) => s.DownloadDirectories = v.Count == 0 ? null : v,
+            s => s.DisabledDownloadDirectories, (s, v) => s.DisabledDownloadDirectories = v);
+        downloads.AddButton.Click += (_, _) =>
+        {
+            using var dialog = new FolderBrowserDialog
+            {
+                Description = Strings.Get("ChooseFolder"),
+                UseDescriptionForTitle = true,
+                InitialDirectory = WatchedItems.DefaultDownloadsFolder,
+            };
+            if (dialog.ShowDialog(this) == DialogResult.OK) { downloads.Add(dialog.SelectedPath); }
+        };
+        downloads.AddTo(column);
+
+        // Active Hours
+        column.Controls.Add(Ui.Title(Strings.Get("ActiveHours")));
+        column.Controls.Add(Ui.Hint(Strings.Get("ActiveHoursHint")));
+        var schedule = new CheckedListBox { Width = 460, Height = 110, CheckOnClick = true, IntegralHeight = false, Margin = new Padding(20, 2, 0, 2) };
+        schedule.ItemCheck += (_, e) =>
+        {
+            if (refreshing) { return; }
+            var index = e.Index;
+            var enabled = e.NewValue == CheckState.Checked;
+            BeginInvoke(() => Update(s => s.ScheduleWindows[index].Enabled = enabled));
+        };
+        column.Controls.Add(schedule);
+        var scheduleButtons = Ui.Row();
+        scheduleButtons.Margin = new Padding(20, 0, 0, 0);
+        scheduleButtons.Controls.Add(Ui.Button(Strings.Get("Add"), (_, _) =>
+        {
+            using var dialog = new ScheduleWindowDialog(null);
+            if (dialog.ShowDialog(this) == DialogResult.OK) { Update(s => s.ScheduleWindows.Add(dialog.Window)); }
+        }));
+        scheduleButtons.Controls.Add(Ui.Button(Strings.Get("Edit"), (_, _) =>
+        {
+            var index = schedule.SelectedIndex;
+            if (index < 0) { return; }
+            using var dialog = new ScheduleWindowDialog(store.Settings.ScheduleWindows[index]);
+            if (dialog.ShowDialog(this) == DialogResult.OK) { Update(s => s.ScheduleWindows[index] = dialog.Window); }
+        }));
+        scheduleButtons.Controls.Add(Ui.Button(Strings.Get("Remove"), (_, _) =>
+        {
+            var index = schedule.SelectedIndex;
+            if (index >= 0) { Update(s => s.ScheduleWindows.RemoveAt(index)); }
+        }));
+        column.Controls.Add(scheduleButtons);
+        refreshers.Add(() =>
+        {
+            schedule.BeginUpdate();
+            schedule.Items.Clear();
+            foreach (var w in store.Settings.ScheduleWindows) { schedule.Items.Add(DescribeWindow(w), w.Enabled); }
+            schedule.EndUpdate();
+        });
+
+        column.Controls.Add(Ui.Text(string.Empty));
+        column.Controls.Add(Ui.Text(Strings.Get("WatchedItemToggleHint")));
+        column.Controls.Add(Ui.Text(Strings.Get("TriggersNeedEnablingHint")));
+        return column;
+    }
+
+    private void ShowWiFiAddMenu(WatchedListSection wifi)
+    {
+        var menu = DisposableMenu();
+        var reading = WlanWiFiProbe.Read();
+        switch (reading.Status)
+        {
+            case WiFiReadStatus.Connected:
+                foreach (var ssid in reading.Ssids)
+                {
+                    var name = ssid;
+                    menu.Items.Add(Strings.Format("AddCurrentNetworkFormat", name), null, (_, _) => wifi.Add(name));
+                }
+                break;
+            case WiFiReadStatus.AccessDenied:
+                menu.Items.Add(new ToolStripMenuItem(Strings.Get("NetworkNameUnreadable")) { Enabled = false });
+                menu.Items.Add(Strings.Get("OpenLocationSettings"), null, (_, _) => ShellIntegration.OpenUrl("ms-settings:privacy-location"));
+                break;
+            default:
+                menu.Items.Add(new ToolStripMenuItem(Strings.Get("NotConnectedToWiFi")) { Enabled = false });
+                break;
+        }
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(Strings.Get("EnterNetworkName"), null, (_, _) =>
+        {
+            using var prompt = new TextPromptDialog(Strings.Get("WatchedWiFi"), Strings.Get("NetworkName"));
+            if (prompt.ShowDialog(this) == DialogResult.OK && prompt.Value.Trim() is { Length: > 0 } name) { wifi.Add(name); }
+        });
+        menu.Show(wifi.AddButton, new Point(0, wifi.AddButton.Height));
+    }
+
+    /// <summary>A popup menu that disposes itself once closed and its click handler has run.</summary>
+    private ContextMenuStrip DisposableMenu()
+    {
+        var menu = new ContextMenuStrip();
+        menu.Closed += (_, _) => BeginInvoke(menu.Dispose);
+        return menu;
+    }
+
+    internal static string DescribeWindow(ScheduleWindow window)
+    {
+        var days = string.Join(Strings.IsJapanese ? "・" : ", ", window.Weekdays.Select(Strings.WeekdayName));
+        static string Time(int minutes) => $"{minutes / 60:00}:{minutes % 60:00}";
+        return $"{days}  {Time(window.StartMinutes)}–{Time(window.EndMinutes)}";
+    }
+
+    /// <summary>A watched list with per-item on/off checkboxes and Add / Remove buttons.</summary>
+    private sealed class WatchedListSection
+    {
+        private readonly SettingsForm form;
+        private readonly Func<AppSettings, List<string>> items;
+        private readonly Action<AppSettings, List<string>> setItems;
+        private readonly Func<AppSettings, List<string>> disabled;
+        private readonly Action<AppSettings, List<string>> setDisabled;
+        private readonly CheckedListBox list = new() { Width = 460, Height = 96, CheckOnClick = true, IntegralHeight = false, Margin = new Padding(20, 2, 0, 2) };
+        private readonly Label title;
+        private readonly Label hint;
+        private readonly FlowLayoutPanel buttons = Ui.Row();
+
+        public WatchedListSection(SettingsForm form, string titleText, string hintText,
+            Func<AppSettings, List<string>> items, Action<AppSettings, List<string>> setItems,
+            Func<AppSettings, List<string>> disabled, Action<AppSettings, List<string>> setDisabled)
+        {
+            this.form = form;
+            this.items = items;
+            this.setItems = setItems;
+            this.disabled = disabled;
+            this.setDisabled = setDisabled;
+            title = Ui.Title(titleText);
+            hint = Ui.Hint(hintText);
+            AddButton = Ui.Button(Strings.Get("Add"), (_, _) => { });
+            buttons.Margin = new Padding(20, 0, 0, 0);
+            buttons.Controls.Add(AddButton);
+            buttons.Controls.Add(Ui.Button(Strings.Get("Remove"), (_, _) => RemoveSelected()));
+
+            list.ItemCheck += (_, e) =>
+            {
+                if (form.refreshing) { return; }
+                var item = (string)list.Items[e.Index];
+                var enabled = e.NewValue == CheckState.Checked;
+                // ItemCheck fires before the check state changes; apply afterwards.
+                form.BeginInvoke(() => form.Update(s =>
+                {
+                    var off = disabled(s).Where(d => !string.Equals(d, item, StringComparison.OrdinalIgnoreCase)).ToList();
+                    if (!enabled) { off.Add(item); }
+                    setDisabled(s, off);
+                }));
+            };
+            form.refreshers.Add(Refresh);
+        }
+
+        public Button AddButton { get; }
+
+        public void AddTo(Control parent)
+        {
+            parent.Controls.Add(title);
+            parent.Controls.Add(hint);
+            parent.Controls.Add(list);
+            parent.Controls.Add(buttons);
+        }
+
+        public void Add(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) { return; }
+            form.Update(s =>
+            {
+                var current = items(s).ToList();
+                if (current.Contains(value, StringComparer.OrdinalIgnoreCase)) { return; }
+                current.Add(value);
+                setItems(s, current);
+            });
+        }
+
+        private void RemoveSelected()
+        {
+            if (list.SelectedItem is not string item) { return; }
+            form.Update(s =>
+            {
+                setItems(s, items(s).Where(i => !string.Equals(i, item, StringComparison.OrdinalIgnoreCase)).ToList());
+                setDisabled(s, disabled(s).Where(i => !string.Equals(i, item, StringComparison.OrdinalIgnoreCase)).ToList());
+            });
+        }
+
+        private void Refresh()
+        {
+            var settings = form.store.Settings;
+            var off = new HashSet<string>(disabled(settings), StringComparer.OrdinalIgnoreCase);
+            list.BeginUpdate();
+            list.Items.Clear();
+            foreach (var item in items(settings)) { list.Items.Add(item, !off.Contains(item)); }
+            list.EndUpdate();
+        }
+    }
+
+    #endregion
+
+    #region Advanced
+
+    private Control BuildAdvanced()
+    {
+        var column = Ui.Column();
+        column.Controls.Add(Ui.Text(Strings.Get("AdvancedHint")));
+
+        (string Key, Func<AppSettings, bool> Get, Action<AppSettings, bool> Set)[] toggles =
+        [
+            ("QuitOnTimerExpiration", s => s.QuitOnTimerExpiration, (s, v) => s.QuitOnTimerExpiration = v),
+            ("AllowDisplaySleep", s => s.AllowDisplaySleep, (s, v) => s.AllowDisplaySleep = v),
+            ("PreventDiskSleep", s => s.PreventDiskSleep, (s, v) => s.PreventDiskSleep = v),
+            ("DriveAlive", s => s.DriveAlive, (s, v) => s.DriveAlive = v),
+            ("MouseJiggler", s => s.MouseJiggler, (s, v) => s.MouseJiggler = v),
+            ("HideCountdown", s => s.CountdownHidden, (s, v) => s.CountdownHidden = v),
+            ("DeactivateOnUserSwitch", s => s.DeactivateOnUserSwitch, (s, v) => s.DeactivateOnUserSwitch = v),
+            ("ActivateOnExternalDisplay", s => s.ActivateOnExternalDisplay, (s, v) => s.ActivateOnExternalDisplay = v),
+            ("ActivateOnACPower", s => s.ActivateOnACPower, (s, v) => s.ActivateOnACPower = v),
+            ("ActivateDuringSchedule", s => s.ScheduleEnabled, (s, v) => s.ScheduleEnabled = v),
+            ("ActivateWhileDownloading", s => s.DownloadInProgressActivationEnabled, (s, v) => s.DownloadInProgressActivationEnabled = v),
+            ("ActivateOnExternalAudio", s => s.ActivateOnExternalAudioOutput, (s, v) => s.ActivateOnExternalAudioOutput = v),
+        ];
+        foreach (var (key, get, set) in toggles) { column.Controls.Add(Bound(Strings.Get(key), get, set)); }
+
+        var cpuRow = Ui.Row();
+        var cpu = Bound(Strings.Get("ActivateOnCpuLoad"), s => s.ActivateOnCpuLoad, (s, v) => s.ActivateOnCpuLoad = v);
+        cpu.MaximumSize = new Size(380, 0);
+        var threshold = new NumericUpDown { Minimum = 1, Maximum = 99, Width = 60, Margin = new Padding(6, 2, 2, 0) };
+        threshold.ValueChanged += (_, _) => Update(s => s.CpuLoadThreshold = (double)threshold.Value);
+        cpuRow.Controls.Add(cpu);
+        cpuRow.Controls.Add(threshold);
+        cpuRow.Controls.Add(new Label { Text = "%", AutoSize = true, Margin = new Padding(0, 6, 0, 0) });
+        column.Controls.Add(cpuRow);
+        refreshers.Add(() => threshold.Value = (decimal)Math.Round(store.Settings.EffectiveCpuLoadThreshold));
+
+        column.Controls.Add(Ui.Button(Strings.Get("ResetToDefault"), (_, _) => store.Update(s => s.ResetAdvanced())));
+        return column;
+    }
+
+    #endregion
+
+    #region Updates
+
+    private Control BuildUpdates()
+    {
+        var column = Ui.Column();
+        column.Controls.Add(Bound(Strings.Get("AutomaticallyCheckForUpdates"), s => s.AutomaticallyCheckForUpdates, (s, v) => s.AutomaticallyCheckForUpdates = v));
+        column.Controls.Add(Bound(Strings.Get("PreReleaseUpdates"), s => s.PreReleaseUpdates, (s, v) => s.PreReleaseUpdates = v));
+        var lastChecked = Ui.Text(string.Empty);
+        Button? checkNow = null;
+        checkNow = Ui.Button(Strings.Get("CheckNow"), async (_, _) =>
+        {
+            checkNow!.Enabled = false;
+            try
+            {
+                var release = await updates.CheckNowAsync();
+                if (release is null)
+                {
+                    MessageBox.Show(this, Strings.Format("UpToDateFormat", UpdateService.CurrentVersion), Strings.Get("AppName"));
+                }
+                else if (MessageBox.Show(this, Strings.Format("UpdateAvailableFormat", release.Tag, UpdateService.CurrentVersion),
+                             Strings.Get("UpdateAvailableTitle"), MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes)
+                {
+                    ShellIntegration.OpenUrl(release.PageUrl);
+                }
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+            {
+                MessageBox.Show(this, Strings.Format("UpdateCheckFailedFormat", ex.Message), Strings.Get("AppName"),
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            finally
+            {
+                if (!IsDisposed) { checkNow.Enabled = true; }
+            }
+        });
+        column.Controls.Add(checkNow);
+        column.Controls.Add(lastChecked);
+        refreshers.Add(() => lastChecked.Text = store.Settings.LastUpdateCheck is { } last
+            ? Strings.Format("LastCheckedFormat", last.LocalDateTime.ToString("g"))
+            : Strings.Get("NeverChecked"));
+        return column;
+    }
+
+    #endregion
+
+    #region About
+
+    private static Control BuildAbout()
+    {
+        var column = Ui.Column(new Padding(20));
+        using (var icon = TrayIcons.AppIcon())
+        {
+            column.Controls.Add(new PictureBox
+            {
+                Image = new Icon(icon, 64, 64).ToBitmap(),
+                SizeMode = PictureBoxSizeMode.AutoSize,
+                Margin = new Padding(0, 0, 0, 8),
+            });
+        }
+        var name = Ui.Title("KeepingYouAwake for Windows");
+        name.Font = new Font(name.Font.FontFamily, name.Font.Size * 1.4f, FontStyle.Bold);
+        column.Controls.Add(name);
+        column.Controls.Add(Ui.Text(Strings.Format("VersionFormat", UpdateService.CurrentVersion)));
+        column.Controls.Add(Ui.Text(Strings.Get("AboutDescription")));
+        column.Controls.Add(Ui.Text(Strings.Get("AboutCredits")));
+        column.Controls.Add(Ui.Text("© 2014–2026 Marcel Dierkes · © 2026 ryouka0731"));
+        var link = new LinkLabel { Text = Strings.Get("OpenWebsite"), AutoSize = true, Margin = new Padding(0, 8, 0, 0) };
+        link.LinkClicked += (_, _) => ShellIntegration.OpenUrl(UpdateChecker.ProjectUrl);
+        column.Controls.Add(link);
+        return column;
+    }
+
+    #endregion
+}

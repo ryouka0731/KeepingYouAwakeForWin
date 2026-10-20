@@ -1,0 +1,84 @@
+using System.Reflection;
+using KeepingYouAwake.Core;
+using Timer = System.Windows.Forms.Timer;
+
+namespace KeepingYouAwake.UI;
+
+/// <summary>Checks GitHub Releases at launch and daily when automatic checks are on.</summary>
+internal sealed class UpdateService : IDisposable
+{
+    private static readonly TimeSpan CheckInterval = TimeSpan.FromDays(1);
+    private readonly SettingsStore store;
+    private readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(20) };
+    private readonly Timer timer = new() { Interval = (int)TimeSpan.FromHours(1).TotalMilliseconds };
+    private Task<ReleaseInfo?>? inFlight;
+
+    public UpdateService(SettingsStore store)
+    {
+        this.store = store;
+        timer.Tick += async (_, _) => await CheckIfDueAsync();
+    }
+
+    public static string CurrentVersion =>
+        typeof(UpdateService).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0]
+        ?? typeof(UpdateService).Assembly.GetName().Version?.ToString(3)
+        ?? "0.0.0";
+
+    /// <summary>Raised on the UI thread by background checks that find a newer release.</summary>
+    public event EventHandler<ReleaseInfo>? UpdateFound;
+
+    public void StartBackgroundChecks()
+    {
+        timer.Start();
+        // Give the app a moment to settle (and the network to come up at login).
+        var initial = new Timer { Interval = 30_000 };
+        initial.Tick += async (_, _) =>
+        {
+            initial.Dispose();
+            await CheckIfDueAsync();
+        };
+        initial.Start();
+    }
+
+    private async Task CheckIfDueAsync()
+    {
+        var settings = store.Settings;
+        if (!settings.AutomaticallyCheckForUpdates) { return; }
+        if (settings.LastUpdateCheck is { } last && DateTimeOffset.Now - last < CheckInterval) { return; }
+        try
+        {
+            if (await CheckNowAsync() is { } release) { UpdateFound?.Invoke(this, release); }
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            // Try again on the next tick.
+        }
+    }
+
+    /// <summary>Queries GitHub. Returns the newer release, or null when up to date. Throws on network errors.</summary>
+    public async Task<ReleaseInfo?> CheckNowAsync()
+    {
+        // A check already running (e.g. the background one) is shared, not reported as "up to date".
+        if (inFlight is { } running) { return await running; }
+        var task = Run();
+        inFlight = task;
+        try { return await task; }
+        finally
+        {
+            if (inFlight == task) { inFlight = null; }
+        }
+
+        async Task<ReleaseInfo?> Run()
+        {
+            var release = await new UpdateChecker(http).FindUpdateAsync(CurrentVersion, store.Settings.PreReleaseUpdates);
+            store.Update(s => s.LastUpdateCheck = DateTimeOffset.Now);
+            return release;
+        }
+    }
+
+    public void Dispose()
+    {
+        timer.Dispose();
+        http.Dispose();
+    }
+}
