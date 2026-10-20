@@ -38,6 +38,21 @@ internal static class Sta
         }
     }
 
+    /// <summary>
+    /// Clicks a button the way a user would: its tab page is brought to the front first,
+    /// because WinForms ignores <see cref="Button.PerformClick"/> on hidden controls.
+    /// </summary>
+    public static void Click(Button button)
+    {
+        for (Control? parent = button.Parent; parent is not null; parent = parent.Parent)
+        {
+            if (parent is TabPage page && page.Parent is TabControl tabs) { tabs.SelectedTab = page; }
+        }
+        Application.DoEvents();
+        Assert.True(button.CanSelect, $"button '{button.Text}' is not clickable");
+        button.PerformClick();
+    }
+
     /// <summary>Pumps messages for a fixed time.</summary>
     public static void Pump(int milliseconds = 100)
     {

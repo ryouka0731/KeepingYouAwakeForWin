@@ -147,7 +147,7 @@ public class SettingsFormTests
         tray.Fakes.Store.Update(s => s.ShowNotifications = false);
         Assert.False(form.Find<CheckBox>("ShowNotifications").Checked);
 
-        form.Find<Button>("ResetAdvanced").PerformClick();
+        Sta.Click(form.Find<Button>("ResetAdvanced"));
         Assert.False(jiggler.Checked);
         Assert.False(tray.Fakes.Store.Settings.MouseJiggler);
     });
@@ -184,13 +184,13 @@ public class SettingsFormTests
         Assert.False(setDefault.Enabled);
 
         list.SelectedIndex = 1;
-        setDefault.PerformClick();
+        Sta.Click(setDefault);
         Assert.Equal(tray.Controller.Durations.Durations[1], tray.Controller.Durations.Default);
         Assert.Contains("(", (string)list.Items[1]);
 
         var count = list.Items.Count;
         list.SelectedIndex = 2;
-        remove.PerformClick();
+        Sta.Click(remove);
         Assert.Equal(count - 1, list.Items.Count);
     });
 
@@ -212,14 +212,14 @@ public class SettingsFormTests
         Assert.Empty(tray.Fakes.Store.Settings.DisabledWatchedApplications);
 
         apps.List.SelectedIndex = 0;
-        apps.RemoveButton.PerformClick();
+        Sta.Click(apps.RemoveButton);
         Assert.Empty(tray.Fakes.Store.Settings.WatchedApplications);
 
         var downloads = form.DownloadsSection;
         downloads.Add(@"D:\Downloads");
         Assert.Equal([@"D:\Downloads"], tray.Fakes.Store.Settings.DownloadDirectories!);
         downloads.List.SelectedIndex = 0;
-        downloads.RemoveButton.PerformClick();
+        Sta.Click(downloads.RemoveButton);
         Assert.Null(tray.Fakes.Store.Settings.DownloadDirectories); // back to the Downloads folder
     });
 
