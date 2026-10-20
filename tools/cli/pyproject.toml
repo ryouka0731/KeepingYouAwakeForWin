@@ -1,10 +1,11 @@
 [project]
 name = "kya-cli"
 version = "0.1.0"
-description = "Command-line driver for KeepingYouAwake (Amphetamine)."
+description = "Command-line driver for KeepingYouAwake for Windows."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
+classifiers = ["Operating System :: Microsoft :: Windows"]
 authors = [{ name = "Ryoka Nakai", email = "ryouka0731@gmail.com" }]
 dependencies = []
 
@@ -15,9 +16,9 @@ test = ["pytest"]
 kya = "kya:main"
 
 [project.urls]
-Homepage = "https://github.com/ryouka0731/KeepingYouAwake-Amphetamine"
-Repository = "https://github.com/ryouka0731/KeepingYouAwake-Amphetamine"
-Issues = "https://github.com/ryouka0731/KeepingYouAwake-Amphetamine/issues"
+Homepage = "https://github.com/ryouka0731/KeepingYouAwakeForWin"
+Repository = "https://github.com/ryouka0731/KeepingYouAwakeForWin"
+Issues = "https://github.com/ryouka0731/KeepingYouAwakeForWin/issues"
 
 [build-system]
 requires = ["hatchling"]

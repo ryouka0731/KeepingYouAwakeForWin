@@ -1,10 +1,11 @@
 [project]
 name = "kya-mcp-server"
 version = "0.1.0"
-description = "MCP server for KeepingYouAwake (Amphetamine) — drives the macOS keep-awake utility from Claude Code and other MCP clients."
+description = "MCP server for KeepingYouAwake for Windows — drives the Windows keep-awake tray app from Claude Code and other MCP clients."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
+classifiers = ["Operating System :: Microsoft :: Windows"]
 authors = [{ name = "Ryoka Nakai", email = "ryouka0731@gmail.com" }]
 dependencies = [
     "mcp>=1.0.0,<2",
@@ -17,9 +18,9 @@ test = ["pytest"]
 kya-mcp-server = "kya_mcp_server:main"
 
 [project.urls]
-Homepage = "https://github.com/ryouka0731/KeepingYouAwake-Amphetamine"
-Repository = "https://github.com/ryouka0731/KeepingYouAwake-Amphetamine"
-Issues = "https://github.com/ryouka0731/KeepingYouAwake-Amphetamine/issues"
+Homepage = "https://github.com/ryouka0731/KeepingYouAwakeForWin"
+Repository = "https://github.com/ryouka0731/KeepingYouAwakeForWin"
+Issues = "https://github.com/ryouka0731/KeepingYouAwakeForWin/issues"
 
 [build-system]
 requires = ["hatchling"]

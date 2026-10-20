@@ -1,51 +1,50 @@
 # `kya` — command-line driver
 
-Tiny CLI for **KeepingYouAwake (Amphetamine)** — drive activate / deactivate / status from the terminal, shell scripts, cron jobs, or any other place a one-shot command is more natural than clicking the menu bar icon.
+Tiny CLI for **KeepingYouAwake for Windows**. Use it to activate, deactivate, or check status from PowerShell, `cmd.exe`, batch files, Task Scheduler jobs, or anywhere else a one-shot command beats clicking the system tray icon.
 
 ## Examples
 
-```bash
-$ kya activate 30m
-$ kya activate 2h
-$ kya activate                # indefinite
-$ kya activate --until-end-of-day
-$ kya deactivate
-$ kya toggle
-$ kya status
+```powershell
+PS> kya activate 30m
+PS> kya activate 2h
+PS> kya activate                # indefinite
+PS> kya activate --until-end-of-day
+PS> kya deactivate
+PS> kya toggle
+PS> kya status
 active (source=user) remaining=0:29:54
-$ kya status --json
+PS> kya status --json
 {"active": true, "source": "user", "startedAt": "...", "requestedDuration": 1800, "fireDate": "...", "remainingSeconds": 1794.7}
 ```
 
-`kya status` exits **0** when active, **1** when inactive — handy for shell `if` checks.
+`kya status` exits **0** when active, **1** when inactive, so you can branch on it in scripts (`if ($LASTEXITCODE -eq 0) { … }` in PowerShell, `if errorlevel 1 …` in batch).
 
 ## Install
 
 Recommended: [`uv`](https://docs.astral.sh/uv/):
 
-```bash
-uv tool install \
-  "git+https://github.com/ryouka0731/KeepingYouAwake-Amphetamine.git#subdirectory=tools/cli"
+```powershell
+uv tool install "git+https://github.com/ryouka0731/KeepingYouAwakeForWin.git#subdirectory=tools/cli"
 ```
 
 Or with stock `pip` from a clone:
 
-```bash
-git clone https://github.com/ryouka0731/KeepingYouAwake-Amphetamine.git
-cd KeepingYouAwake-Amphetamine/tools/cli
+```powershell
+git clone https://github.com/ryouka0731/KeepingYouAwakeForWin.git
+cd KeepingYouAwakeForWin\tools\cli
 pip install .
 ```
 
-Either gets you a `kya` executable on PATH. No external Python deps; just the standard library.
+Either way you get a `kya` executable on PATH. It has no external Python dependencies, only the standard library.
 
 ## How it talks to KYA
 
 Same playbook as `kya-mcp-server`:
 
-- Activate / deactivate / toggle via the running app's URL scheme (`open keepingyouawake:///…`).
-- Status reads `~/Library/Application Support/KeepingYouAwake/activity.jsonl` (the activity log).
+- Activate / deactivate / toggle go through the app's registered URL scheme (`keepingyouawake:///…`), opened with the Windows shell (`os.startfile`, the same as `start "" "keepingyouawake:///toggle"`).
+- Status reads the activity log at `%APPDATA%\KeepingYouAwake\activity.jsonl`. It also checks that `KeepingYouAwake.exe` is running (via `tasklist`). An open log entry left behind by a crash is reported as inactive.
 
-KYA must be installed; the URL scheme launches it on demand if it isn't running.
+KeepingYouAwake for Windows must be installed. The URL scheme starts it on demand if it isn't running. On non-Windows platforms the activate / deactivate / toggle commands print an error and exit non-zero.
 
 ## Duration grammar
 

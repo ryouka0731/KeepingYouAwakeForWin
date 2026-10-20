@@ -6,10 +6,13 @@ module is gated behind ``pytest.importorskip("mcp")``. Within that, we test:
 
   * the pure helpers (``_safe_iso_to_epoch``, ``_read_recent_entries``,
     ``_current_status``) — same contracts as the CLI;
-  * the ``ALLOWED_DEFAULT_KEYS`` allow-list enforcement in ``kya_set_default``;
+  * the ``ALLOWED_DEFAULT_KEYS`` allow-list enforcement in ``kya_set_default``
+    (allowed keys answer "unsupported" on Windows — nothing is shelled out);
+  * ``%APPDATA%`` log-path resolution, the ``tasklist`` running check, and
+    ``_open_url`` via ``os.startfile`` — all mocked, nothing is launched;
   * the ``tools/list`` surface (6 tools with name/description/inputSchema);
-  * dispatching every tool via ``call_tool`` with ``_open_url`` / ``defaults
-    write`` stubbed out, asserting the returned payload is JSON-serializable
+  * dispatching every tool via ``call_tool`` with ``_open_url`` stubbed out,
+    asserting the returned payload is JSON-serializable
     and matches the declared top-level shape.
 """
 
@@ -17,6 +20,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -52,10 +57,15 @@ def _write_log(tmp_path: Path, lines) -> Path:
     return p
 
 
+_ORIGINAL_IS_RUNNING = srv._kya_is_running
+
+
 @pytest.fixture(autouse=True)
-def _no_container_log(tmp_path, monkeypatch):
-    """Keep a real sandbox-container log on the dev machine out of tests."""
-    monkeypatch.setattr(srv, "CONTAINER_ACTIVITY_LOG_PATH", tmp_path / "no-container" / "activity.jsonl")
+def _appdata(tmp_path, monkeypatch):
+    """Point %APPDATA% at a temp dir so a real log on the dev machine stays out."""
+    appdata = tmp_path / "AppData" / "Roaming"
+    monkeypatch.setenv("APPDATA", str(appdata))
+    return appdata
 
 
 @pytest.fixture(autouse=True)
@@ -65,17 +75,17 @@ def _kya_running(monkeypatch):
 
 
 @pytest.fixture()
-def patched_log(tmp_path, monkeypatch):
+def patched_log(_appdata):
     def _install(lines):
-        p = _write_log(tmp_path, lines)
-        monkeypatch.setattr(srv, "ACTIVITY_LOG_PATH", p)
-        return p
+        log_dir = _appdata / "KeepingYouAwake"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        return _write_log(log_dir, lines)
 
     return _install
 
 
-def test_read_recent_entries_missing_file(tmp_path, monkeypatch):
-    monkeypatch.setattr(srv, "ACTIVITY_LOG_PATH", tmp_path / "nope.jsonl")
+def test_read_recent_entries_missing_file():
+    assert not srv._activity_log_path().exists()
     assert srv._read_recent_entries(10) == []
 
 
@@ -162,12 +172,13 @@ def test_list_tools_returns_six_with_required_keys():
 
 
 # --------------------------------------------------------------------------
-# call_tool dispatch — _open_url / defaults write stubbed
+# call_tool dispatch — _open_url stubbed
 # --------------------------------------------------------------------------
 
 @pytest.fixture()
 def captured_urls(monkeypatch):
     urls: list[str] = []
+    # `_open_url` returns None on success (an error string on failure).
     monkeypatch.setattr(srv, "_open_url", lambda url: urls.append(url))
     return urls
 
@@ -275,89 +286,179 @@ def test_set_default_rejects_key_not_in_allowlist(monkeypatch):
     text = _text(_call("kya_set_default", {"key": "info.marcel-dierkes.KeepingYouAwake.SomethingEvil", "value": True}))
     assert "refused" in text
     assert "not in allow-list" in text
-    # crucially: no `defaults write` (or anything) was shelled out.
+    # crucially: nothing was shelled out.
     assert called == []
 
 
-def test_set_default_accepts_allowed_key(monkeypatch):
-    allowed_key = next(iter(srv.ALLOWED_DEFAULT_KEYS))
-    captured = {}
-
-    class _Completed:
-        stderr = b""
-
-    def _fake_run(cmd, *a, **k):
-        captured["cmd"] = cmd
-        return _Completed()
-
-    monkeypatch.setattr(srv.subprocess, "run", _fake_run)
-    out = json.loads(_text(_call("kya_set_default", {"key": allowed_key, "value": True})))
-    assert out == {"set": allowed_key, "value": True}
-    assert captured["cmd"][:2] == ["defaults", "write"]
-    assert allowed_key in captured["cmd"]
-    assert "-bool" in captured["cmd"]
+@pytest.fixture
+def settings_dir(tmp_path, monkeypatch):
+    """Point %APPDATA% at a temp dir; returns the settings.json path."""
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    return tmp_path / "KeepingYouAwake" / "settings.json"
 
 
-def test_set_default_accepts_allowed_key_int_value(monkeypatch):
-    # Pick a key whose name suggests an int threshold; any allowed key works
-    # for the code path (it branches on the Python value type, not the key).
-    allowed_key = "info.marcel-dierkes.KeepingYouAwake.CPULoadActivationThreshold"
-    assert allowed_key in srv.ALLOWED_DEFAULT_KEYS
-    captured = {}
+def test_set_default_writes_settings_json_and_keeps_other_keys(settings_dir, monkeypatch):
+    monkeypatch.setattr(srv.subprocess, "run", lambda *a, **k: pytest.fail("must not spawn"))
+    settings_dir.parent.mkdir(parents=True)
+    settings_dir.write_text(json.dumps({"showNotifications": False, "MouseJiggler": False}), encoding="utf-8")
 
-    class _Completed:
-        stderr = b""
+    out = json.loads(_text(_call("kya_set_default", {"key": "info.marcel-dierkes.KeepingYouAwake.MouseJigglerEnabled", "value": True})))
 
-    monkeypatch.setattr(srv.subprocess, "run", lambda cmd, *a, **k: captured.setdefault("cmd", cmd) or _Completed())
-    out = json.loads(_text(_call("kya_set_default", {"key": allowed_key, "value": 80})))
-    assert out == {"set": allowed_key, "value": 80}
-    assert "-int" in captured["cmd"]
-    assert "80" in captured["cmd"]
+    assert out == {"set": True, "key": "info.marcel-dierkes.KeepingYouAwake.MouseJigglerEnabled",
+                   "property": "mouseJiggler", "value": True}
+    data = json.loads(settings_dir.read_text(encoding="utf-8"))
+    assert data == {"showNotifications": False, "mouseJiggler": True}
 
 
-def test_set_default_accepts_allowed_key_false_value(monkeypatch):
-    allowed_key = next(iter(srv.ALLOWED_DEFAULT_KEYS))
-    captured = {}
+def test_set_default_accepts_new_property_names_and_numbers(settings_dir):
+    out = json.loads(_text(_call("kya_set_default", {"key": "cpuLoadThreshold", "value": "75"})))
+    assert out["set"] is True
+    assert json.loads(settings_dir.read_text(encoding="utf-8")) == {"cpuLoadThreshold": 75.0}
 
-    class _Completed:
-        stderr = b""
 
-    monkeypatch.setattr(srv.subprocess, "run", lambda cmd, *a, **k: captured.setdefault("cmd", cmd) or _Completed())
-    out = json.loads(_text(_call("kya_set_default", {"key": allowed_key, "value": False})))
-    assert out == {"set": allowed_key, "value": False}
-    # Source emits `defaults write <domain> <key> -bool NO` for a false value.
-    assert captured["cmd"][:2] == ["defaults", "write"]
-    assert allowed_key in captured["cmd"]
-    assert "-bool" in captured["cmd"]
-    assert "NO" in captured["cmd"]
-    assert "YES" not in captured["cmd"]
+@pytest.mark.parametrize("key,value", [
+    ("mouseJiggler", 3),
+    ("mouseJiggler", "maybe"),
+    ("cpuLoadThreshold", True),
+    ("cpuLoadThreshold", 150),
+    ("cpuLoadThreshold", "x"),
+])
+def test_set_default_rejects_bad_values(settings_dir, key, value):
+    out = json.loads(_text(_call("kya_set_default", {"key": key, "value": value})))
+    assert out["set"] is False
+    assert out["error"].startswith("expected")
+    assert not settings_dir.exists()
+
+
+def test_set_default_reports_corrupt_settings_file(settings_dir):
+    settings_dir.parent.mkdir(parents=True)
+    settings_dir.write_text("[1, 2]", encoding="utf-8")
+    out = json.loads(_text(_call("kya_set_default", {"key": "mouseJiggler", "value": True})))
+    assert out["set"] is False
+    assert settings_dir.read_text(encoding="utf-8") == "[1, 2]"
 
 
 def test_current_status_ignores_stale_open_entry_behind_newer_closed(patched_log):
     # An entry left open by a quit/crash must not be reported once a newer
     # session has been opened and closed.
     patched_log([
-        {"startedAt": "2024-01-01T00:00:00Z", "source": "stale"},
-        {"startedAt": "2024-01-02T00:00:00Z", "endedAt": "2024-01-02T01:00:00Z", "source": "user"},
+        {"startedAt": "2024-01-01T00:00:00Z", "source": "watched-app"},
+        {"startedAt": "2024-01-02T00:00:00Z", "endedAt": "2024-01-02T01:00:00Z",
+         "source": "user", "requestedDuration": 3600, "endedReason": "expired"},
     ])
     assert srv._current_status() == {"active": False}
-
-
-def test_activity_log_path_prefers_most_recently_written(tmp_path, monkeypatch):
-    import os
-    home_log = tmp_path / "home" / "activity.jsonl"
-    container_log = tmp_path / "container" / "activity.jsonl"
-    for path in (home_log, container_log):
-        path.parent.mkdir(parents=True)
-        path.write_text("{}\n", encoding="utf-8")
-    os.utime(home_log, (1_000, 1_000))
-    os.utime(container_log, (2_000, 2_000))
-    monkeypatch.setattr(srv, "ACTIVITY_LOG_PATH", home_log)
-    monkeypatch.setattr(srv, "CONTAINER_ACTIVITY_LOG_PATH", container_log)
-    assert srv._activity_log_path() == container_log
 
 
 def test_current_status_inactive_when_kya_not_running(patched_log, monkeypatch):
     patched_log([{"startedAt": "2024-01-01T00:00:00Z", "source": "user"}])
     monkeypatch.setattr(srv, "_kya_is_running", lambda: False)
     assert srv._current_status() == {"active": False}
+
+
+# --------------------------------------------------------------------------
+# URL-opening failures surface in the tool payload
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "tool,args,key",
+    [
+        ("kya_activate", {"duration": 60}, "activated"),
+        ("kya_deactivate", {}, "deactivated"),
+        ("kya_toggle", {}, "toggled"),
+    ],
+)
+def test_call_reports_open_url_failure(monkeypatch, tool, args, key):
+    monkeypatch.setattr(srv, "_open_url", lambda url: "cannot open: nope")
+    out = json.loads(_text(_call(tool, args)))
+    assert out[key] is False
+    assert out["error"] == "cannot open: nope"
+
+
+# --------------------------------------------------------------------------
+# _open_url — os.startfile (Windows) mocked
+# --------------------------------------------------------------------------
+
+def test_open_url_uses_startfile(monkeypatch):
+    opened = []
+    monkeypatch.setattr(os, "startfile", lambda url: opened.append(url), raising=False)
+    assert srv._open_url("keepingyouawake:///toggle") is None
+    assert opened == ["keepingyouawake:///toggle"]
+
+
+def test_open_url_startfile_oserror_returns_error(monkeypatch, capsys):
+    def _boom(url):
+        raise OSError("No application is associated with the specified file")
+
+    monkeypatch.setattr(os, "startfile", _boom, raising=False)
+    err = srv._open_url("keepingyouawake:///toggle")
+    assert err and "keepingyouawake:///toggle" in err
+    captured = capsys.readouterr()
+    assert captured.out == ""  # stdout is the MCP transport
+    assert "keepingyouawake:///toggle" in captured.err
+
+
+def test_open_url_without_startfile_returns_error(monkeypatch, capsys):
+    monkeypatch.delattr(os, "startfile", raising=False)
+    monkeypatch.setattr(srv.subprocess, "run", lambda *a, **k: pytest.fail("must not spawn"))
+    err = srv._open_url("keepingyouawake:///toggle")
+    assert err and "Windows" in err
+    assert capsys.readouterr().out == ""
+
+
+# --------------------------------------------------------------------------
+# _activity_log_path — %APPDATA% resolution
+# --------------------------------------------------------------------------
+
+def test_activity_log_path_uses_appdata(tmp_path, monkeypatch):
+    monkeypatch.setenv("APPDATA", str(tmp_path / "Roaming"))
+    assert srv._activity_log_path() == tmp_path / "Roaming" / "KeepingYouAwake" / "activity.jsonl"
+
+
+def test_activity_log_path_falls_back_to_home_roaming(tmp_path, monkeypatch):
+    monkeypatch.delenv("APPDATA", raising=False)
+    monkeypatch.setattr(srv.Path, "home", classmethod(lambda cls: tmp_path))
+    assert srv._activity_log_path() == (
+        tmp_path / "AppData" / "Roaming" / "KeepingYouAwake" / "activity.jsonl"
+    )
+
+
+# --------------------------------------------------------------------------
+# _kya_is_running — `tasklist` mocked
+# --------------------------------------------------------------------------
+
+def _fake_tasklist(monkeypatch, stdout="", exc=None):
+    calls = []
+
+    def _run(cmd, *a, **k):
+        calls.append((cmd, k))
+        if exc is not None:
+            raise exc
+        return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(srv.subprocess, "run", _run)
+    return calls
+
+
+def test_kya_is_running_true_when_tasklist_lists_process(monkeypatch):
+    calls = _fake_tasklist(
+        monkeypatch, stdout='"KeepingYouAwake.exe","4242","Console","1","52,340 K"\r\n'
+    )
+    assert _ORIGINAL_IS_RUNNING() is True
+    cmd, kwargs = calls[0]
+    assert cmd == ["tasklist", "/FI", "IMAGENAME eq KeepingYouAwake.exe", "/NH", "/FO", "CSV"]
+    assert kwargs["timeout"] == 5
+    assert kwargs["check"] is False
+
+
+def test_kya_is_running_false_when_no_match(monkeypatch):
+    _fake_tasklist(monkeypatch, stdout="INFO: No tasks are running which match the specified criteria.\r\n")
+    assert _ORIGINAL_IS_RUNNING() is False
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [FileNotFoundError("tasklist"), OSError("boom"), subprocess.TimeoutExpired("tasklist", 5)],
+)
+def test_kya_is_running_true_when_tasklist_unavailable(monkeypatch, exc):
+    _fake_tasklist(monkeypatch, exc=exc)
+    assert _ORIGINAL_IS_RUNNING() is True

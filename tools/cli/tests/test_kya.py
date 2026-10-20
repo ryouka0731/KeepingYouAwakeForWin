@@ -2,7 +2,8 @@
 
 These exercise the pure helpers (``parse_duration``, ``_safe_iso_to_epoch``,
 ``_read_recent_entries``, ``_current_status``) plus the ``status`` subcommand
-end-to-end via ``subprocess`` with a monkeypatched ``HOME``.
+end-to-end via ``subprocess`` with ``APPDATA`` pointed at a temp directory.
+Nothing is ever launched: ``os.startfile`` and ``tasklist`` are mocked.
 """
 
 from __future__ import annotations
@@ -97,10 +98,16 @@ def _write_log(tmp_path: Path, lines) -> Path:
     return p
 
 
+def _log_path_in(appdata: Path) -> Path:
+    return appdata / "KeepingYouAwake" / "activity.jsonl"
+
+
 @pytest.fixture(autouse=True)
-def _no_container_log(tmp_path, monkeypatch):
-    """Keep a real sandbox-container log on the dev machine out of tests."""
-    monkeypatch.setattr(kya, "CONTAINER_ACTIVITY_LOG_PATH", tmp_path / "no-container" / "activity.jsonl")
+def _appdata(tmp_path, monkeypatch):
+    """Point %APPDATA% at a temp dir so a real log on the dev machine stays out."""
+    appdata = tmp_path / "AppData" / "Roaming"
+    monkeypatch.setenv("APPDATA", str(appdata))
+    return appdata
 
 
 @pytest.fixture(autouse=True)
@@ -110,19 +117,19 @@ def _kya_running(monkeypatch):
 
 
 @pytest.fixture()
-def patched_log(tmp_path, monkeypatch):
-    """Return a callable that installs a synthetic log and points kya at it."""
+def patched_log(_appdata):
+    """Return a callable that installs a synthetic log where kya looks for it."""
 
     def _install(lines):
-        p = _write_log(tmp_path, lines)
-        monkeypatch.setattr(kya, "ACTIVITY_LOG_PATH", p)
-        return p
+        log_dir = _log_path_in(_appdata).parent
+        log_dir.mkdir(parents=True, exist_ok=True)
+        return _write_log(log_dir, lines)
 
     return _install
 
 
-def test_read_recent_entries_missing_file(tmp_path, monkeypatch):
-    monkeypatch.setattr(kya, "ACTIVITY_LOG_PATH", tmp_path / "does-not-exist.jsonl")
+def test_read_recent_entries_missing_file():
+    assert not kya._activity_log_path().exists()
     assert kya._read_recent_entries(10) == []
 
 
@@ -220,26 +227,28 @@ def test_current_status_picks_most_recent_open_entry(patched_log):
 
 
 # --------------------------------------------------------------------------
-# `kya status [--json]` subcommand via subprocess (monkeypatched HOME)
+# `kya status [--json]` subcommand via subprocess (APPDATA -> temp dir)
 # --------------------------------------------------------------------------
 
-_KYA_PY = str(Path(kya.__file__).resolve())
+_KYA_DIR = str(Path(kya.__file__).resolve().parent)
+
+# Runs `kya.main` in a child interpreter with `_kya_is_running` stubbed, so
+# the result doesn't depend on `tasklist` or KYA running on this host (and
+# works the same on Windows, macOS, and Linux CI runners).
+_CHILD = (
+    "import sys; sys.path.insert(0, sys.argv[1]); import kya; "
+    "kya._kya_is_running = lambda: sys.argv[2] == '1'; "
+    "raise SystemExit(kya.main(sys.argv[3:]))"
+)
 
 
-def _run_status(tmp_home: Path, *args, kya_running: bool = True):
-    # Copy the real environment and only override HOME so the child keeps
-    # PATH / LANG / etc. — a bare {"HOME": ...} dict breaks in stripped envs.
+def _run_status(appdata: Path, *args, kya_running: bool = True):
+    # Copy the real environment and only override APPDATA so the child keeps
+    # PATH / SYSTEMROOT / etc. — a bare env dict breaks Python on Windows.
     env = os.environ.copy()
-    env["HOME"] = str(tmp_home)
-    # Fake `pgrep` so the result doesn't depend on KYA running on this host.
-    fake_bin = tmp_home / "fake-bin"
-    fake_bin.mkdir(exist_ok=True)
-    pgrep = fake_bin / "pgrep"
-    pgrep.write_text(f"#!/bin/sh\nexit {0 if kya_running else 1}\n", encoding="utf-8")
-    pgrep.chmod(0o755)
-    env["PATH"] = f"{fake_bin}{os.pathsep}{env.get('PATH', '')}"
+    env["APPDATA"] = str(appdata)
     return subprocess.run(
-        [sys.executable, _KYA_PY, "status", *args],
+        [sys.executable, "-c", _CHILD, _KYA_DIR, "1" if kya_running else "0", "status", *args],
         capture_output=True,
         text=True,
         env=env,
@@ -247,55 +256,55 @@ def _run_status(tmp_home: Path, *args, kya_running: bool = True):
     )
 
 
-def test_status_subprocess_inactive_exit_1(tmp_path):
+def _write_child_log(appdata: Path, entry: dict) -> None:
+    log = _log_path_in(appdata)
+    log.parent.mkdir(parents=True)
+    log.write_text(json.dumps(entry) + "\n", encoding="utf-8")
+
+
+def test_status_subprocess_inactive_exit_1(_appdata):
     # Empty / nonexistent log => inactive => exit 1.
-    res = _run_status(tmp_path)
+    res = _run_status(_appdata)
     assert res.returncode == 1
     assert res.stdout.strip() == "inactive"
 
 
-def test_status_subprocess_json_inactive(tmp_path):
-    res = _run_status(tmp_path, "--json")
+def test_status_subprocess_json_inactive(_appdata):
+    res = _run_status(_appdata, "--json")
     assert res.returncode == 1
     payload = json.loads(res.stdout)
     assert payload == {"active": False}
 
 
-def test_status_subprocess_json_active_exit_0(tmp_path):
-    log_dir = tmp_path / "Library" / "Application Support" / "KeepingYouAwake"
-    log_dir.mkdir(parents=True)
+def test_status_subprocess_json_active_exit_0(_appdata):
     started = datetime.now(timezone.utc) - timedelta(seconds=5)
-    (log_dir / "activity.jsonl").write_text(
-        json.dumps(
-            {
-                "startedAt": started.isoformat().replace("+00:00", "Z"),
-                "source": "test",
-                "requestedDuration": 1800,
-            }
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    res = _run_status(tmp_path, "--json")
+    _write_child_log(_appdata, {
+        "startedAt": started.isoformat().replace("+00:00", "Z"),
+        "source": "user",
+        "requestedDuration": 1800,
+    })
+    res = _run_status(_appdata, "--json")
     assert res.returncode == 0
     payload = json.loads(res.stdout)
     assert payload["active"] is True
-    assert payload["source"] == "test"
+    assert payload["source"] == "user"
     assert payload["requestedDuration"] == 1800
     assert isinstance(payload["remainingSeconds"], (int, float))
 
 
-def test_status_subprocess_human_active(tmp_path):
-    log_dir = tmp_path / "Library" / "Application Support" / "KeepingYouAwake"
-    log_dir.mkdir(parents=True)
-    (log_dir / "activity.jsonl").write_text(
-        json.dumps({"startedAt": "2024-01-01T00:00:00Z", "source": "test"}) + "\n",
-        encoding="utf-8",
-    )
-    res = _run_status(tmp_path)
+def test_status_subprocess_human_active(_appdata):
+    _write_child_log(_appdata, {"startedAt": "2024-01-01T00:00:00Z", "source": "schedule",
+                                "requestedDuration": -1})
+    res = _run_status(_appdata)
     assert res.returncode == 0
-    assert "active" in res.stdout
-    assert "source=test" in res.stdout
+    assert res.stdout.strip() == "active (source=schedule) indefinite"
+
+
+def test_status_subprocess_open_entry_but_kya_not_running(_appdata):
+    _write_child_log(_appdata, {"startedAt": "2024-01-01T00:00:00Z", "source": "user"})
+    res = _run_status(_appdata, "--json", kya_running=False)
+    assert res.returncode == 1
+    assert json.loads(res.stdout) == {"active": False}
 
 
 # --------------------------------------------------------------------------
@@ -307,72 +316,168 @@ def test_current_status_ignores_stale_open_entry_behind_newer_closed(patched_log
     # session was opened and closed normally. Only one session can be open
     # at a time, so the newest entry decides the state.
     patched_log([
-        {"startedAt": "2024-01-01T00:00:00Z", "source": "stale"},
-        {"startedAt": "2024-01-02T00:00:00Z", "endedAt": "2024-01-02T01:00:00Z", "source": "user"},
+        {"startedAt": "2024-01-01T00:00:00Z", "source": "watched-app"},
+        {"startedAt": "2024-01-02T00:00:00Z", "endedAt": "2024-01-02T01:00:00Z",
+         "source": "user", "requestedDuration": 3600, "endedReason": "expired"},
     ])
     assert kya._current_status() == {"active": False}
 
 
-def test_activate_without_duration_requests_indefinite(monkeypatch):
-    # `activate` with no query falls back to the app's default duration,
-    # not indefinite; the CLI must send an explicit seconds=0.
-    urls = []
-    monkeypatch.setattr(kya, "_open_url", lambda url: urls.append(url) or 0)
-    assert kya.main(["activate"]) == 0
-    assert urls == ["keepingyouawake:///activate?seconds=0"]
-
-
-def test_activity_log_path_prefers_most_recently_written(tmp_path, monkeypatch):
-    home_log = tmp_path / "home" / "activity.jsonl"
-    container_log = tmp_path / "container" / "activity.jsonl"
-    for path in (home_log, container_log):
-        path.parent.mkdir(parents=True)
-        path.write_text("{}\n", encoding="utf-8")
-    os.utime(home_log, (1_000, 1_000))
-    os.utime(container_log, (2_000, 2_000))
-    monkeypatch.setattr(kya, "ACTIVITY_LOG_PATH", home_log)
-    monkeypatch.setattr(kya, "CONTAINER_ACTIVITY_LOG_PATH", container_log)
-    assert kya._activity_log_path() == container_log
-
-    os.utime(home_log, (3_000, 3_000))
-    assert kya._activity_log_path() == home_log
-
-
-def test_activity_log_path_defaults_to_home_when_none_exist(tmp_path, monkeypatch):
-    home_log = tmp_path / "home" / "activity.jsonl"
-    monkeypatch.setattr(kya, "ACTIVITY_LOG_PATH", home_log)
-    assert kya._activity_log_path() == home_log
-
-
-def test_status_subprocess_reads_sandbox_container_log(tmp_path):
-    # A sandboxed (Xcode-signed) build writes under its container.
-    log_dir = (tmp_path / "Library" / "Containers" / "info.marcel-dierkes.KeepingYouAwake"
-               / "Data" / "Library" / "Application Support" / "KeepingYouAwake")
-    log_dir.mkdir(parents=True)
-    (log_dir / "activity.jsonl").write_text(
-        json.dumps({"startedAt": "2024-01-01T00:00:00Z", "source": "container"}) + "\n",
-        encoding="utf-8",
-    )
-    res = _run_status(tmp_path, "--json")
-    assert res.returncode == 0
-    assert json.loads(res.stdout)["source"] == "container"
-
-
 def test_current_status_inactive_when_kya_not_running(patched_log, monkeypatch):
     # Crash/kill leaves the newest entry open until KYA relaunches and
-    # repairs it; meanwhile nothing keeps the Mac awake.
+    # repairs it; meanwhile nothing keeps the PC awake.
     patched_log([{"startedAt": "2024-01-01T00:00:00Z", "source": "user"}])
     monkeypatch.setattr(kya, "_kya_is_running", lambda: False)
     assert kya._current_status() == {"active": False}
 
 
-def test_status_subprocess_open_entry_but_kya_not_running(tmp_path):
-    log_dir = tmp_path / "Library" / "Application Support" / "KeepingYouAwake"
-    log_dir.mkdir(parents=True)
-    (log_dir / "activity.jsonl").write_text(
-        json.dumps({"startedAt": "2024-01-01T00:00:00Z", "source": "test"}) + "\n",
-        encoding="utf-8",
+# --------------------------------------------------------------------------
+# URL-scheme commands — `_open_url` captured, nothing launched
+# --------------------------------------------------------------------------
+
+@pytest.fixture()
+def captured_urls(monkeypatch):
+    urls: list[str] = []
+    monkeypatch.setattr(kya, "_open_url", lambda url: urls.append(url) or 0)
+    return urls
+
+
+def test_activate_without_duration_requests_indefinite(captured_urls):
+    # `activate` with no query falls back to the app's default duration,
+    # not indefinite; the CLI must send an explicit seconds=0.
+    assert kya.main(["activate"]) == 0
+    assert captured_urls == ["keepingyouawake:///activate?seconds=0"]
+
+
+@pytest.mark.parametrize("arg,seconds", [("30m", 1800), ("2h", 7200), ("90", 90), ("1h30m", 5400)])
+def test_activate_with_duration(captured_urls, arg, seconds):
+    assert kya.main(["activate", arg]) == 0
+    assert captured_urls == [f"keepingyouawake:///activate?seconds={seconds}"]
+
+
+def test_activate_until_end_of_day(captured_urls):
+    assert kya.main(["activate", "--until-end-of-day"]) == 0
+    assert len(captured_urls) == 1
+    prefix = "keepingyouawake:///activate?seconds="
+    assert captured_urls[0].startswith(prefix)
+    assert 0 < int(captured_urls[0][len(prefix):]) <= 86400
+
+
+def test_deactivate_and_toggle(captured_urls):
+    assert kya.main(["deactivate"]) == 0
+    assert kya.main(["toggle"]) == 0
+    assert captured_urls == ["keepingyouawake:///deactivate", "keepingyouawake:///toggle"]
+
+
+def test_command_propagates_open_url_failure(monkeypatch):
+    monkeypatch.setattr(kya, "_open_url", lambda url: 2)
+    assert kya.main(["toggle"]) == 2
+
+
+# --------------------------------------------------------------------------
+# _open_url — os.startfile (Windows) mocked
+# --------------------------------------------------------------------------
+
+def test_open_url_uses_startfile(monkeypatch):
+    opened = []
+    monkeypatch.setattr(os, "startfile", lambda url: opened.append(url), raising=False)
+    assert kya._open_url("keepingyouawake:///toggle") == 0
+    assert opened == ["keepingyouawake:///toggle"]
+
+
+def test_open_url_startfile_oserror_is_nonzero(monkeypatch, capsys):
+    def _boom(url):
+        raise OSError("No application is associated with the specified file")
+
+    monkeypatch.setattr(os, "startfile", _boom, raising=False)
+    assert kya._open_url("keepingyouawake:///toggle") != 0
+    assert "keepingyouawake:///toggle" in capsys.readouterr().err
+
+
+def test_open_url_without_startfile_errors(monkeypatch, capsys):
+    # Non-Windows: no os.startfile -> stderr message + non-zero, nothing spawned.
+    monkeypatch.delattr(os, "startfile", raising=False)
+    monkeypatch.setattr(kya.subprocess, "run", lambda *a, **k: pytest.fail("must not spawn"))
+    assert kya._open_url("keepingyouawake:///toggle") != 0
+    assert "Windows" in capsys.readouterr().err
+
+
+# --------------------------------------------------------------------------
+# _activity_log_path — %APPDATA% resolution
+# --------------------------------------------------------------------------
+
+def test_activity_log_path_uses_appdata(tmp_path, monkeypatch):
+    monkeypatch.setenv("APPDATA", str(tmp_path / "Roaming"))
+    assert kya._activity_log_path() == tmp_path / "Roaming" / "KeepingYouAwake" / "activity.jsonl"
+
+
+@pytest.mark.parametrize("value", [None, ""])
+def test_activity_log_path_falls_back_to_home_roaming(tmp_path, monkeypatch, value):
+    if value is None:
+        monkeypatch.delenv("APPDATA", raising=False)
+    else:
+        monkeypatch.setenv("APPDATA", value)
+    monkeypatch.setattr(kya.Path, "home", classmethod(lambda cls: tmp_path))
+    assert kya._activity_log_path() == (
+        tmp_path / "AppData" / "Roaming" / "KeepingYouAwake" / "activity.jsonl"
     )
-    res = _run_status(tmp_path, "--json", kya_running=False)
-    assert res.returncode == 1
-    assert json.loads(res.stdout) == {"active": False}
+
+
+# --------------------------------------------------------------------------
+# _kya_is_running — `tasklist` mocked
+# --------------------------------------------------------------------------
+
+def _real_is_running():
+    # The autouse fixture stubs kya._kya_is_running; reach the real one.
+    return _ORIGINAL_IS_RUNNING()
+
+
+_ORIGINAL_IS_RUNNING = kya._kya_is_running
+
+
+def _fake_tasklist(monkeypatch, stdout="", exc=None):
+    calls = []
+
+    def _run(cmd, *a, **k):
+        calls.append((cmd, k))
+        if exc is not None:
+            raise exc
+        return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(kya.subprocess, "run", _run)
+    return calls
+
+
+def test_kya_is_running_true_when_tasklist_lists_process(monkeypatch):
+    calls = _fake_tasklist(
+        monkeypatch, stdout='"KeepingYouAwake.exe","4242","Console","1","52,340 K"\r\n'
+    )
+    assert _real_is_running() is True
+    cmd, kwargs = calls[0]
+    assert cmd == ["tasklist", "/FI", "IMAGENAME eq KeepingYouAwake.exe", "/NH", "/FO", "CSV"]
+    assert kwargs["capture_output"] is True
+    assert kwargs["check"] is False
+    assert kwargs["timeout"] == 5
+
+
+def test_kya_is_running_case_insensitive(monkeypatch):
+    _fake_tasklist(monkeypatch, stdout='"keepingyouawake.EXE","4242","Console","1","52,340 K"\r\n')
+    assert _real_is_running() is True
+
+
+def test_kya_is_running_false_when_no_match(monkeypatch):
+    _fake_tasklist(
+        monkeypatch,
+        stdout="INFO: No tasks are running which match the specified criteria.\r\n",
+    )
+    assert _real_is_running() is False
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [FileNotFoundError("tasklist"), OSError("boom"), subprocess.TimeoutExpired("tasklist", 5)],
+)
+def test_kya_is_running_true_when_tasklist_unavailable(monkeypatch, exc):
+    # Can't tell -> don't hide a real session.
+    _fake_tasklist(monkeypatch, exc=exc)
+    assert _real_is_running() is True

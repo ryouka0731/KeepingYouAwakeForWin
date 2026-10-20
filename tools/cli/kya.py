@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""kya — command-line driver for KeepingYouAwake (Amphetamine).
+"""kya — command-line driver for KeepingYouAwake for Windows.
 
 Examples:
     kya activate 30m
@@ -12,57 +12,73 @@ Examples:
     kya status --json
 
 The CLI doesn't poke at KYA's internals: it drives the running app
-through the URL scheme it already exposes (`keepingyouawake:///…`),
-and reads `~/Library/Application Support/KeepingYouAwake/activity.jsonl`
-for state. KYA must be installed; the URL scheme will launch it on
-demand if it isn't running.
+through the URL scheme it registers (`keepingyouawake:///…`), and reads
+`%APPDATA%\\KeepingYouAwake\\activity.jsonl` for state. KYA must be
+installed; the URL scheme will launch it on demand if it isn't running.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-ACTIVITY_LOG_PATH = (
-    Path.home() / "Library" / "Application Support" / "KeepingYouAwake" / "activity.jsonl"
-)
-# Where a sandboxed (Xcode-signed) build writes the same file. Release
-# builds are ad-hoc signed without entitlements, so they use the path above.
-CONTAINER_ACTIVITY_LOG_PATH = (
-    Path.home() / "Library" / "Containers" / "info.marcel-dierkes.KeepingYouAwake"
-    / "Data" / "Library" / "Application Support" / "KeepingYouAwake" / "activity.jsonl"
-)
+APP_EXECUTABLE = "KeepingYouAwake.exe"
 
 
 def _activity_log_path() -> Path:
-    """The activity log KYA is writing to: the most recently modified of the
-    unsandboxed and sandbox-container locations (unsandboxed if neither exists)."""
-    existing = [p for p in (ACTIVITY_LOG_PATH, CONTAINER_ACTIVITY_LOG_PATH) if p.exists()]
-    if not existing:
-        return ACTIVITY_LOG_PATH
-    return max(existing, key=lambda p: p.stat().st_mtime)
+    """The activity log KYA writes: `%APPDATA%\\KeepingYouAwake\\activity.jsonl`.
+
+    Falls back to `~\\AppData\\Roaming` when `APPDATA` isn't set. Resolved on
+    every call so tests (and a changed environment) are honoured.
+    """
+    appdata = os.environ.get("APPDATA")
+    base = Path(appdata) if appdata else Path.home() / "AppData" / "Roaming"
+    return base / "KeepingYouAwake" / "activity.jsonl"
 
 
 def _kya_is_running() -> bool:
-    """Whether a KeepingYouAwake process exists. An open log entry while it
-    isn't running was left by a crash or kill (KYA repairs it on next launch)."""
+    """Whether a KeepingYouAwake.exe process exists. An open log entry while
+    it isn't running was left by a crash or kill (KYA repairs it on next launch)."""
     try:
         result = subprocess.run(
-            ["pgrep", "-x", "KeepingYouAwake"], capture_output=True, check=False, timeout=5
+            ["tasklist", "/FI", f"IMAGENAME eq {APP_EXECUTABLE}", "/NH", "/FO", "CSV"],
+            capture_output=True,
+            text=True,
+            errors="replace",
+            check=False,
+            timeout=5,
+            # Don't flash a console window when run from a windowless host.
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except (OSError, subprocess.SubprocessError):
         return True  # can't tell — don't hide a real session
-    return result.returncode == 0
+    return f'"{APP_EXECUTABLE}"'.lower() in (result.stdout or "").lower()
 
 
 def _open_url(url: str) -> int:
-    """Drive KYA via its URL scheme. Returns the subprocess exit code."""
-    return subprocess.run(["open", "-g", url], check=False).returncode
+    """Drive KYA via its URL scheme. Returns 0 on success, non-zero on failure."""
+    if not hasattr(os, "startfile"):
+        print(
+            f"kya: cannot open {url}: the keepingyouawake:// URL scheme is only "
+            "available on Windows (os.startfile is missing on this platform).",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        os.startfile(url)
+    except OSError as exc:
+        print(
+            f"kya: cannot open {url}: {exc}. Is KeepingYouAwake for Windows installed?",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
 
 
 def parse_duration(text: str) -> int:
@@ -192,7 +208,7 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="kya", description="Drive KeepingYouAwake (Amphetamine).")
+    parser = argparse.ArgumentParser(prog="kya", description="Drive KeepingYouAwake for Windows.")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     pa = sub.add_parser("activate", help="Start a keep-awake session.")
