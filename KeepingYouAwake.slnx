@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/KeepingYouAwake.Core/KeepingYouAwake.Core.csproj" />
+    <Project Path="src/KeepingYouAwake/KeepingYouAwake.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/KeepingYouAwake.Core.Tests/KeepingYouAwake.Core.Tests.csproj" />
+  </Folder>
+</Solution>

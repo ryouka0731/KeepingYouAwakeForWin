@@ -1,7 +1,11 @@
 .DS_Store
-xcuserdata
-build
-dist
+bin/
+obj/
+artifacts/
+*.user
+.vs/
+TestResults/
+__pycache__/
+.pytest_cache/
 .claude/
 .serena/
-tools/mcp-server/__pycache__/
