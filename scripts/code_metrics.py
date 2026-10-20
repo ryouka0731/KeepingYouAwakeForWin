@@ -189,10 +189,16 @@ def render(dotnet: list[Coverage], python: list[Coverage], functions: list[Funct
 def check(dotnet: list[Coverage], python: list[Coverage], functions: list[Function] | None) -> list[str]:
     failures: list[str] = []
     by_name = {("dotnet", c.name): c for c in dotnet} | {("python", "*"): c for c in python}
+    measured_kinds = {"dotnet"} if dotnet else set()
+    measured_kinds |= {"python"} if python else set()
     for (kind, name, metric), minimum in THRESHOLDS.items():
+        if kind not in measured_kinds:
+            continue  # that report wasn't given in this run
         cov = by_name.get((kind, name))
         if cov is None:
-            continue  # not measured in this run
+            # A report was given but a component is missing: its tests didn't produce coverage.
+            failures.append(f"{kind} {name}: no coverage data in the report")
+            continue
         value = cov.line_rate if metric == "line" else cov.branch_rate
         if value < minimum:
             failures.append(f"{kind} {name} {metric} coverage {value:.1f}% < {minimum:.1f}%")
