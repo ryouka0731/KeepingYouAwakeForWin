@@ -1,0 +1,11 @@
+{
+  "stryker-config": {
+    "project": "KeepingYouAwake.Core.csproj",
+    "test-projects": ["tests/KeepingYouAwake.Core.Tests/KeepingYouAwake.Core.Tests.csproj"],
+    "mutate": ["!**/Strings.cs"],
+    "reporters": ["html", "json", "markdown", "progress"],
+    "thresholds": { "high": 80, "low": 65, "break": 0 },
+    "mutation-level": "Standard",
+    "concurrency": 4
+  }
+}

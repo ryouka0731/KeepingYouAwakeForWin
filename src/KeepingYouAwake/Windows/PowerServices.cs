@@ -10,8 +10,10 @@ namespace KeepingYouAwake.Windows;
 /// Keeps the PC awake with a power request (listed by <c>powercfg /requests</c> with
 /// this app's reason), falling back to <c>SetThreadExecutionState</c> on the UI thread.
 /// </summary>
-internal sealed class PowerRequestAssertion : ISleepAssertion, IDisposable
+internal sealed class PowerRequestAssertion(Func<IntPtr>? createRequest = null) : ISleepAssertion, IDisposable
 {
+    /// <summary>Creates the power request handle; replaceable so tests can force the fallback.</summary>
+    private readonly Func<IntPtr> createRequest = createRequest ?? CreatePowerRequest;
     private IntPtr request;
     private bool systemSet;
     private bool displaySet;
@@ -43,18 +45,23 @@ internal sealed class PowerRequestAssertion : ISleepAssertion, IDisposable
     private void EnsureRequest()
     {
         if (request != IntPtr.Zero || usingFallback) { return; }
+        request = createRequest();
+        if (request == IntPtr.Zero || request == new IntPtr(-1))
+        {
+            request = IntPtr.Zero;
+            usingFallback = true;
+        }
+    }
+
+    private static IntPtr CreatePowerRequest()
+    {
         var context = new ReasonContext
         {
             Version = PowerRequestContextVersion,
             Flags = PowerRequestContextSimpleString,
             SimpleReasonString = Reason,
         };
-        request = PowerCreateRequest(ref context);
-        if (request == IntPtr.Zero || request == new IntPtr(-1))
-        {
-            request = IntPtr.Zero;
-            usingFallback = true;
-        }
+        return PowerCreateRequest(ref context);
     }
 
     private void SetDisplayRequired(bool required)
@@ -97,9 +104,13 @@ internal sealed class WindowsPowerSource : IPowerSource, IDisposable
 {
     private readonly IDisposable poll;
 
-    public WindowsPowerSource(IScheduler scheduler)
+    private readonly Func<PowerStatus> read;
+
+    /// <param name="read">Reads the current status; replaceable so tests can simulate changes.</param>
+    public WindowsPowerSource(IScheduler scheduler, Func<PowerStatus>? read = null)
     {
-        Current = Read();
+        this.read = read ?? Read;
+        Current = this.read();
         SystemEvents.PowerModeChanged += OnPowerModeChanged;
         poll = scheduler.Every(TimeSpan.FromSeconds(30), Refresh);
     }
@@ -117,7 +128,7 @@ internal sealed class WindowsPowerSource : IPowerSource, IDisposable
 
     internal void Refresh()
     {
-        var status = Read();
+        var status = read();
         if (status == Current) { return; }
         Current = status;
         Changed?.Invoke(this, EventArgs.Empty);
@@ -158,9 +169,13 @@ internal sealed class WindowsSessionEvents : ISessionEvents, IDisposable
 /// <summary>Counts active display paths whose connector isn't built in (eDP / LVDS / internal).</summary>
 internal sealed class DisplayConfigMonitor : IDisplayMonitor, IDisposable
 {
-    public DisplayConfigMonitor()
+    private readonly Func<int> count;
+
+    /// <param name="count">Counts external displays; replaceable so tests can simulate changes.</param>
+    public DisplayConfigMonitor(Func<int>? count = null)
     {
-        ExternalDisplayCount = Count();
+        this.count = count ?? Count;
+        ExternalDisplayCount = this.count();
         SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
     }
 
@@ -171,9 +186,9 @@ internal sealed class DisplayConfigMonitor : IDisplayMonitor, IDisposable
 
     internal void OnDisplaySettingsChanged(object? sender, EventArgs e) => UiThread.Post(() =>
     {
-        var count = Count();
-        if (count == ExternalDisplayCount) { return; }
-        ExternalDisplayCount = count;
+        var current = count();
+        if (current == ExternalDisplayCount) { return; }
+        ExternalDisplayCount = current;
         Changed?.Invoke(this, EventArgs.Empty);
     });
 
@@ -192,9 +207,11 @@ internal sealed class DisplayConfigMonitor : IDisplayMonitor, IDisposable
                 .Select(i => BitConverter.ToUInt32(paths, i * DisplayConfigPathInfoSize + PathOutputTechnologyOffset));
             return WindowsDecoding.CountExternalDisplays(technologies);
         }
-        // Fallback: every screen beyond the first.
-        return Math.Max(0, Screen.AllScreens.Length - 1);
+        return CountFromScreens();
     }
+
+    /// <summary>Fallback when the display configuration can't be queried: every screen beyond the first.</summary>
+    internal static int CountFromScreens() => Math.Max(0, Screen.AllScreens.Length - 1);
 }
 
 internal sealed class SystemTimesCpuSampler : ICpuTimesSampler

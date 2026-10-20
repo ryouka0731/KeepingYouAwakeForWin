@@ -60,14 +60,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
         Controller.QuitRequested += (_, _) => Quit();
 
         notifyIcon = new NotifyIcon { Icon = icons.Inactive, ContextMenuStrip = menu, Visible = true };
-        notifyIcon.MouseClick += (_, e) =>
-        {
-            if (e.Button == MouseButtons.Left) { Controller.Toggle(); }
-        };
-        notifyIcon.BalloonTipClicked += (_, _) =>
-        {
-            if (pendingUpdateUrl is { } url) { ShellIntegration.OpenUrl(url); }
-        };
+        notifyIcon.MouseClick += OnNotifyIconClick;
+        notifyIcon.BalloonTipClicked += OnBalloonTipClicked;
         menu.Opening += (_, _) => RebuildMenu();
 
         countdownTimer.Tick += (_, _) => UpdateTooltip();
@@ -155,6 +149,18 @@ internal sealed class TrayApplicationContext : ApplicationContext
         pendingUpdateUrl = release.PageUrl;
         LastNotification = (title, body);
         notifyIcon.ShowBalloonTip(10_000, title, body, ToolTipIcon.Info);
+    }
+
+    /// <summary>Left-click toggles; right-click opens the context menu (handled by the NotifyIcon).</summary>
+    internal void OnNotifyIconClick(object? sender, MouseEventArgs e)
+    {
+        if (e.Button == MouseButtons.Left) { Controller.Toggle(); }
+    }
+
+    /// <summary>Clicking an update notification opens the release page.</summary>
+    internal void OnBalloonTipClicked(object? sender, EventArgs e)
+    {
+        if (pendingUpdateUrl is { } url) { (prompts ?? WinFormsPrompts.Instance).OpenUrl(url); }
     }
 
     internal UpdateService Updates => updates;

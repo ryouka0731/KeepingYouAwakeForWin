@@ -17,6 +17,8 @@ internal sealed class SettingsForm : Form
     private readonly List<Action> refreshers = [];
     /// <summary>The + buttons' popup menu, reused and disposed with the window.</summary>
     private readonly ContextMenuStrip popup = new();
+
+    internal ContextMenuStrip Popup => popup;
     private bool refreshing;
 
     public SettingsForm(SettingsStore store, ActivationDurationsController durations, UpdateService updates,
