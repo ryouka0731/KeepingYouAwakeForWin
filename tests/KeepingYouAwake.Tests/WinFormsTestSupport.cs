@@ -90,6 +90,7 @@ internal static class Sta
     {
         var dialog = IntPtr.Zero;
         var claim = new IntPtr(++nextClaim);
+        var attempts = 0;
         Poll(() =>
         {
             if (dialog == IntPtr.Zero)
@@ -107,7 +108,8 @@ internal static class Sta
             }
             DialogLog.Enqueue($"post {buttonId} to {dialog:X}");
             PostMessage(dialog, WmCommand, new IntPtr(buttonId), IntPtr.Zero);
-            if (buttonId == IdCancel) { PostMessage(dialog, WmClose, IntPtr.Zero, IntPtr.Zero); }
+            // A message box with a single OK button doesn't answer to IDOK; closing it is the same as OK.
+            if (buttonId == IdCancel || ++attempts > 3) { PostMessage(dialog, WmClose, IntPtr.Zero, IntPtr.Zero); }
             return false;
         }, intervalMilliseconds: 150);
     }
