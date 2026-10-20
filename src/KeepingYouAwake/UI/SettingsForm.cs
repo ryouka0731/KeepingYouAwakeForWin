@@ -96,14 +96,19 @@ internal sealed class SettingsForm : Form
         var startAtLogin = Ui.Check(Strings.Get("StartAtLogin"));
         startAtLogin.Name = "StartAtLogin";
         startAtLogin.Checked = shell.IsStartAtLoginEnabled;
+        var syncing = false;
         startAtLogin.CheckedChanged += (_, _) =>
         {
+            if (syncing) { return; }
             try { shell.SetStartAtLogin(startAtLogin.Checked); }
             catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or System.Security.SecurityException)
             {
                 prompts.Inform(this, ex.Message, Strings.Get("AppName"), MessageBoxIcon.Warning);
             }
-            startAtLogin.Checked = shell.IsStartAtLoginEnabled;
+            // Show what is really registered, without treating that as a new request (and a second error).
+            syncing = true;
+            try { startAtLogin.Checked = shell.IsStartAtLoginEnabled; }
+            finally { syncing = false; }
         };
         column.Controls.Add(startAtLogin);
         column.Controls.Add(Ui.Hint(Strings.Get("StartAtLoginHint")));
