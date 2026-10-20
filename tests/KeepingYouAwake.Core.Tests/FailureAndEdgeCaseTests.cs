@@ -149,6 +149,7 @@ public class FailureAndEdgeCaseTests : IDisposable
         var timer = new DriveAliveTimer(new FakeScheduler(), drives, dir, runInline: true);
         timer.Start();
         var ping = Path.Combine(dir, DriveAliveTimer.PingFileName);
+        File.SetAttributes(ping, FileAttributes.Normal); // Windows refuses to overwrite hidden files
         File.WriteAllText(ping, DriveAliveTimer.ContentPrefix + "someone-else 2026\n");
         timer.Stop();
         Assert.True(File.Exists(ping));
