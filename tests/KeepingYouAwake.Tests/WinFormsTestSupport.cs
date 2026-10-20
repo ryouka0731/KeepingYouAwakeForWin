@@ -73,27 +73,47 @@ internal static class Sta
     public const int IdOk = 1;
     public const int IdCancel = 2;
 
-    /// <summary>Presses <paramref name="buttonId"/> on the next native dialog of this thread (MessageBox, file / folder pickers).</summary>
-    public static void WhenNativeDialogShown(int buttonId) =>
+    private static readonly HashSet<IntPtr> ClaimedDialogs = [];
+
+    /// <summary>
+    /// Presses <paramref name="buttonId"/> on the next native dialog of this thread (MessageBox, file / folder
+    /// pickers). Keeps pressing until that dialog is gone: a dialog still initializing ignores early input.
+    /// </summary>
+    public static void WhenNativeDialogShown(int buttonId)
+    {
+        var dialog = IntPtr.Zero;
         Poll(() =>
         {
-            IntPtr dialog = IntPtr.Zero;
-            EnumThreadWindows(GetCurrentThreadId(), (hwnd, _) =>
+            if (dialog == IntPtr.Zero)
             {
-                var name = new System.Text.StringBuilder(64);
-                GetClassName(hwnd, name, name.Capacity);
-                if (name.ToString() == "#32770" && IsWindowVisible(hwnd)) { dialog = hwnd; return false; }
-                return true;
-            }, IntPtr.Zero);
-            if (dialog == IntPtr.Zero) { return false; }
+                dialog = FindUnclaimedDialog();
+                if (dialog == IntPtr.Zero) { return false; }
+                ClaimedDialogs.Add(dialog);
+            }
+            if (!IsWindow(dialog)) { return true; }
             PostMessage(dialog, WmCommand, new IntPtr(buttonId), IntPtr.Zero);
-            return true;
-        });
+            if (buttonId == IdCancel) { PostMessage(dialog, WmClose, IntPtr.Zero, IntPtr.Zero); }
+            return false;
+        }, intervalMilliseconds: 150);
+    }
 
-    /// <summary>Calls <paramref name="tick"/> on this thread every 20 ms (also inside modal loops) until it returns true.</summary>
-    private static void Poll(Func<bool> tick)
+    private static IntPtr FindUnclaimedDialog()
     {
-        var timer = new System.Windows.Forms.Timer { Interval = 20 };
+        var found = IntPtr.Zero;
+        EnumThreadWindows(GetCurrentThreadId(), (hwnd, _) =>
+        {
+            var name = new System.Text.StringBuilder(64);
+            GetClassName(hwnd, name, name.Capacity);
+            if (name.ToString() == "#32770" && IsWindowVisible(hwnd) && !ClaimedDialogs.Contains(hwnd)) { found = hwnd; return false; }
+            return true;
+        }, IntPtr.Zero);
+        return found;
+    }
+
+    /// <summary>Calls <paramref name="tick"/> on this thread periodically (also inside modal loops) until it returns true.</summary>
+    private static void Poll(Func<bool> tick, int intervalMilliseconds = 20)
+    {
+        var timer = new System.Windows.Forms.Timer { Interval = intervalMilliseconds };
         var deadline = Environment.TickCount64 + 15_000;
         timer.Tick += (_, _) =>
         {
@@ -105,6 +125,11 @@ internal static class Sta
     }
 
     private const int WmCommand = 0x0111;
+    private const int WmClose = 0x0010;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool IsWindow(IntPtr hwnd);
 
     private delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
 

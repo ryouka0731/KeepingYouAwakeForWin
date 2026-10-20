@@ -241,24 +241,37 @@ public class WinFormsPromptsTests
         Assert.EndsWith(".exe", prompts.ChooseRunningApplication(owner));
     });
 
-    [Fact]
-    public void NativeDialogsCanBeCancelledOrConfirmed() => Sta.Run(() =>
+    private static void WithOwner(Action<Form> body) => Sta.Run(() =>
     {
         using var owner = new Form { ShowInTaskbar = false };
         owner.Show();
+        body(owner);
+    });
+
+    [Fact]
+    public void MessageBoxesReturnTheButtonPressed() => WithOwner(owner =>
+    {
         var prompts = WinFormsPrompts.Instance;
-
-        Sta.WhenNativeDialogShown(Sta.IdCancel);
-        Assert.Null(prompts.ChooseFile(owner, "Title", "Programs (*.exe)|*.exe", Path.GetTempPath()));
-        Sta.WhenNativeDialogShown(Sta.IdCancel);
-        Assert.Null(prompts.ChooseFolder(owner, "Choose", Path.GetTempPath()));
-
         Sta.WhenNativeDialogShown(Sta.IdOk);
         Assert.True(prompts.Confirm(owner, "Sure?", "Title"));
         Sta.WhenNativeDialogShown(Sta.IdCancel);
         Assert.False(prompts.Confirm(owner, "Sure?", "Title"));
         Sta.WhenNativeDialogShown(Sta.IdOk);
         prompts.Inform(owner, "Done", "Title", MessageBoxIcon.Information);
+    });
+
+    [Fact]
+    public void CancelledFilePickerReturnsNull() => WithOwner(owner =>
+    {
+        Sta.WhenNativeDialogShown(Sta.IdCancel);
+        Assert.Null(WinFormsPrompts.Instance.ChooseFile(owner, "Title", "Programs (*.exe)|*.exe", Path.GetTempPath()));
+    });
+
+    [Fact]
+    public void CancelledFolderPickerReturnsNull() => WithOwner(owner =>
+    {
+        Sta.WhenNativeDialogShown(Sta.IdCancel);
+        Assert.Null(WinFormsPrompts.Instance.ChooseFolder(owner, "Choose", Path.GetTempPath()));
     });
 }
 
