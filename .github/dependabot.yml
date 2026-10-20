@@ -1,7 +1,5 @@
-# Keeps the commit-SHA–pinned GitHub Actions and the hash-pinned CI Python
-# locks current: Dependabot rewrites the SHA plus its `# vX.Y.Z` comment,
-# and the pinned versions plus their hashes. Security alerts for the Swift
-# packages are handled by Dependabot's default security updates.
+# Keeps the commit-SHA–pinned GitHub Actions, the NuGet test packages and the
+# hash-pinned CI Python locks current.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -10,6 +8,13 @@ updates:
       interval: weekly
     groups:
       github-actions:
+        patterns: ["*"]
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      nuget:
         patterns: ["*"]
   - package-ecosystem: pip
     directory: /.github/requirements

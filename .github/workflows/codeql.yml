@@ -1,10 +1,7 @@
 name: CodeQL
 
-# GitHub-native SAST. Free unlimited for public OSS repositories.
-# Scans the Objective-C codebase (`c-cpp` extractor covers Obj-C)
-# and the Swift packages under Packages/ in one run; results show
-# up under the repository's Security → Code scanning tab and on
-# the PR as inline annotations.
+# GitHub-native SAST. Free for public repositories. Results show up under
+# Security → Code scanning and as PR annotations.
 
 on:
   pull_request:
@@ -12,8 +9,7 @@ on:
   push:
     branches: [main]
   schedule:
-    # Weekly catch-all so the database stays current even when no
-    # PRs land for a while.
+    # Weekly catch-all so the database stays current between PRs.
     - cron: '17 7 * * 1'
 
 # Least privilege by default; the analyze job adds what it needs.
@@ -23,7 +19,7 @@ permissions:
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
-    runs-on: macos-14
+    runs-on: windows-latest
     permissions:
       actions: read
       contents: read
@@ -31,28 +27,29 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Swift covers the Packages/ test surface area. We tried
-        # adding `c-cpp` for the Obj-C app target too, but CodeQL's
-        # tracer can't observe `xcodebuild` subprocesses on macOS:
-        # System Integrity Protection strips
-        # `DYLD_INSERT_LIBRARIES` from the signed Apple xcodebuild
-        # binary, so the database ends up empty and the run fails
-        # with "CodeQL could not process any code written in C/C++".
-        # Workarounds (running clang directly, mirror builds on
-        # Linux) aren't worth the maintenance overhead — Swift-only
-        # still scans the bulk of the security-relevant logic.
-        language: [swift]
+        include:
+          - language: csharp
+            build-mode: manual
+          - language: python
+            build-mode: none
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        if: matrix.language == 'csharp'
+        with:
+          global-json-file: global.json
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
           queries: security-and-quality
 
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+      - name: Build
+        if: matrix.build-mode == 'manual'
+        run: dotnet build KeepingYouAwake.slnx --configuration Release
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
