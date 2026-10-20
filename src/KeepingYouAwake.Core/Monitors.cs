@@ -138,19 +138,27 @@ public sealed class CpuLoadMonitor(IScheduler scheduler, ICpuTimesSampler sample
 
     internal void SampleOnce()
     {
-        var sample = sampler.Sample();
-        if (sample is not { } now) { return; }
+        if (sampler.Sample() is not { } now) { return; }
         var previous = last;
         last = now;
-        if (previous is not { } prev) { return; }
-
-        if (now.Total <= prev.Total || now.Idle < prev.Idle) { return; }
-        var total = now.Total - prev.Total;
-        var idle = Math.Min(now.Idle - prev.Idle, total);
-        var busy = 100.0 * (total - idle) / total;
+        if (previous is not { } prev || BusyPercent(prev, now) is not { } busy) { return; }
         CurrentBusyPercent = busy;
+        Accumulate(busy > ThresholdPercent);
+        RaiseOnDwell();
+    }
 
-        if (busy > ThresholdPercent)
+    /// <summary>CPU busy share between two samples; null when the counters didn't advance (or wrapped).</summary>
+    internal static double? BusyPercent(CpuTimes previous, CpuTimes now)
+    {
+        if (now.Total <= previous.Total || now.Idle < previous.Idle) { return null; }
+        var total = now.Total - previous.Total;
+        var idle = Math.Min(now.Idle - previous.Idle, total);
+        return 100.0 * (total - idle) / total;
+    }
+
+    private void Accumulate(bool isAbove)
+    {
+        if (isAbove)
         {
             above += SamplingInterval;
             below = TimeSpan.Zero;
@@ -160,7 +168,10 @@ public sealed class CpuLoadMonitor(IScheduler scheduler, ICpuTimesSampler sample
             below += SamplingInterval;
             above = TimeSpan.Zero;
         }
+    }
 
+    private void RaiseOnDwell()
+    {
         if (!IsAboveThreshold && above >= Dwell)
         {
             IsAboveThreshold = true;

@@ -16,8 +16,8 @@ internal static class Program
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
         Application.ThreadException += (_, e) => ReportError(e.Exception);
 
-        ShellIntegration.RegisterUrlScheme();
-        ShellIntegration.RefreshStartAtLoginPath();
+        ShellIntegration.Current.RegisterUrlScheme();
+        ShellIntegration.Current.RefreshStartAtLoginPath();
 
         var store = new SettingsStore(SettingsStore.DefaultFilePath);
         var log = new ActivityLogger(ActivityLogger.DefaultFilePath);

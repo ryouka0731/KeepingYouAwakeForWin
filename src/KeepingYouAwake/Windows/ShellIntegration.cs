@@ -1,57 +1,68 @@
 using System.IO.Pipes;
-using System.Text;
 using KeepingYouAwake.Core;
+using KeepingYouAwake.Core.Platform;
 using Microsoft.Win32;
 
 namespace KeepingYouAwake.Windows;
 
 /// <summary>Per-user registry integration: Start at Login and the <c>keepingyouawake:</c> URL scheme.</summary>
-internal static class ShellIntegration
+internal sealed class ShellIntegration(RegistryKey root, string executablePath, string keyPrefix = "")
 {
-    private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string RunValue = "KeepingYouAwake";
-    private const string ProtocolKey = @"Software\Classes\" + AppCommand.Scheme;
+    private readonly string runKey = keyPrefix + @"Software\Microsoft\Windows\CurrentVersion\Run";
+    private readonly string protocolKey = keyPrefix + @"Software\Classes\" + AppCommand.Scheme;
 
-    public static string ExecutablePath => Environment.ProcessPath ?? Application.ExecutablePath;
+    /// <summary>HKEY_CURRENT_USER and this executable.</summary>
+    public static ShellIntegration Current { get; } =
+        new(Registry.CurrentUser, Environment.ProcessPath ?? Application.ExecutablePath);
 
-    public static bool IsStartAtLoginEnabled
+    public bool IsStartAtLoginEnabled
     {
         get
         {
-            using var key = Registry.CurrentUser.OpenSubKey(RunKey);
+            using var key = root.OpenSubKey(runKey);
             return key?.GetValue(RunValue) is string value && value.Length > 0;
         }
     }
 
-    public static void SetStartAtLogin(bool enabled)
+    public void SetStartAtLogin(bool enabled)
     {
-        using var key = Registry.CurrentUser.CreateSubKey(RunKey);
-        if (enabled) { key.SetValue(RunValue, $"\"{ExecutablePath}\""); }
+        using var key = root.CreateSubKey(runKey);
+        if (enabled) { key.SetValue(RunValue, ShellCommands.StartAtLogin(executablePath)); }
         else { key.DeleteValue(RunValue, throwOnMissingValue: false); }
     }
 
     /// <summary>Points an existing Start at Login entry at this executable (after the app was moved or updated).</summary>
-    public static void RefreshStartAtLoginPath()
+    public void RefreshStartAtLoginPath()
     {
         if (IsStartAtLoginEnabled) { SetStartAtLogin(true); }
     }
 
     /// <summary>Registers <c>keepingyouawake:</c> for the current user, pointing at this executable.</summary>
-    public static void RegisterUrlScheme()
+    public bool RegisterUrlScheme()
     {
         try
         {
-            using var key = Registry.CurrentUser.CreateSubKey(ProtocolKey);
+            using var key = root.CreateSubKey(protocolKey);
             key.SetValue(string.Empty, "URL:KeepingYouAwake");
             key.SetValue("URL Protocol", string.Empty);
-            using (var icon = key.CreateSubKey("DefaultIcon")) { icon.SetValue(string.Empty, $"\"{ExecutablePath}\",0"); }
+            using (var icon = key.CreateSubKey("DefaultIcon")) { icon.SetValue(string.Empty, ShellCommands.Icon(executablePath)); }
             using var command = key.CreateSubKey(@"shell\open\command");
-            command.SetValue(string.Empty, $"\"{ExecutablePath}\" \"%1\"");
+            command.SetValue(string.Empty, ShellCommands.OpenUrl(executablePath));
+            return true;
         }
         catch (Exception e) when (e is UnauthorizedAccessException or IOException or System.Security.SecurityException)
         {
             // Policy may block HKCU\Software\Classes; the app still works without the URL scheme.
+            return false;
         }
+    }
+
+    /// <summary>The registered URL-scheme command, or null.</summary>
+    public string? RegisteredUrlCommand()
+    {
+        using var key = root.OpenSubKey(protocolKey + @"\shell\open\command");
+        return key?.GetValue(string.Empty) as string;
     }
 
     public static void OpenUrl(string url)
@@ -70,7 +81,6 @@ internal static class ShellIntegration
 /// </summary>
 internal sealed class SingleInstance : IDisposable
 {
-    private const int MaxMessageLength = 8 * 1024;
     private readonly Mutex mutex;
     private readonly string pipeName;
     private readonly CancellationTokenSource cancellation = new();
@@ -82,7 +92,7 @@ internal sealed class SingleInstance : IDisposable
     }
 
     /// <summary>Unique per user (SID) and Windows session: pipe names are machine-wide, unlike <c>Local\</c> mutexes.</summary>
-    private static string Name
+    internal static string Name
     {
         get
         {
@@ -93,13 +103,16 @@ internal sealed class SingleInstance : IDisposable
     }
 
     /// <summary>Returns the instance guard, or null when another instance already runs (arguments were forwarded).</summary>
-    public static SingleInstance? Acquire(string[] args)
+    public static SingleInstance? Acquire(string[] args) => Acquire(Name, args);
+
+    /// <summary>Same as <see cref="Acquire(string[])"/> with an explicit name (tests).</summary>
+    internal static SingleInstance? Acquire(string name, string[] args)
     {
-        var mutex = new Mutex(initiallyOwned: true, @"Local\" + Name, out var createdNew);
-        if (createdNew) { return new SingleInstance(mutex, Name); }
+        var mutex = new Mutex(initiallyOwned: true, @"Local\" + name, out var createdNew);
+        if (createdNew) { return new SingleInstance(mutex, name); }
 
         mutex.Dispose();
-        Forward(Name, args);
+        Forward(name, args);
         return null;
     }
 
@@ -116,15 +129,14 @@ internal sealed class SingleInstance : IDisposable
                     using var server = new NamedPipeServerStream(pipeName, PipeDirection.In, 1,
                         PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
                     await server.WaitForConnectionAsync(token).ConfigureAwait(false);
-                    var buffer = new byte[MaxMessageLength];
+                    var buffer = new byte[InstanceMessage.MaximumBytes];
                     var total = 0;
                     int read;
                     while (total < buffer.Length && (read = await server.ReadAsync(buffer.AsMemory(total), token).ConfigureAwait(false)) > 0)
                     {
                         total += read;
                     }
-                    var lines = Encoding.UTF8.GetString(buffer, 0, total)
-                        .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    var lines = InstanceMessage.Decode(buffer.AsSpan(0, total));
                     UiThread.Post(() => onArguments(lines));
                 }
                 catch (OperationCanceledException) { break; }
@@ -140,8 +152,7 @@ internal sealed class SingleInstance : IDisposable
         {
             using var client = new NamedPipeClientStream(".", pipeName, PipeDirection.Out, PipeOptions.CurrentUserOnly);
             client.Connect(3000);
-            var payload = Encoding.UTF8.GetBytes(string.Join('\n', args.Length == 0 ? ["--settings"] : args));
-            client.Write(payload, 0, Math.Min(payload.Length, MaxMessageLength));
+            client.Write(InstanceMessage.Encode(args));
         }
         catch (Exception e) when (e is IOException or TimeoutException or UnauthorizedAccessException) { }
     }

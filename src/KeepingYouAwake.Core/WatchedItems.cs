@@ -13,6 +13,27 @@ public static class WatchedItems
         return items.Where(item => !off.Contains(item)).ToList();
     }
 
+    /// <summary>The switched-off list after turning <paramref name="item"/> on or off (case-insensitive).</summary>
+    public static List<string> WithItemEnabled(IEnumerable<string> disabled, string item, bool enabled)
+    {
+        var result = disabled.Where(d => !string.Equals(d, item, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (!enabled) { result.Add(item); }
+        return result;
+    }
+
+    /// <summary><paramref name="items"/> plus <paramref name="item"/>, unless blank or already listed (case-insensitive).</summary>
+    public static List<string> WithItemAdded(IEnumerable<string> items, string item)
+    {
+        var result = items.ToList();
+        var value = item.Trim();
+        if (value.Length > 0 && !result.Contains(value, StringComparer.OrdinalIgnoreCase)) { result.Add(value); }
+        return result;
+    }
+
+    /// <summary><paramref name="items"/> without <paramref name="item"/> (case-insensitive).</summary>
+    public static List<string> WithItemRemoved(IEnumerable<string> items, string item) =>
+        items.Where(i => !string.Equals(i, item, StringComparison.OrdinalIgnoreCase)).ToList();
+
     /// <summary>
     /// Normalizes a watched application entry: a full path or a bare name becomes
     /// the executable file name with an <c>.exe</c> extension (<c>C:\…\obs64.exe</c> → <c>obs64.exe</c>).

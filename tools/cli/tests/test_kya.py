@@ -481,3 +481,37 @@ def test_kya_is_running_true_when_tasklist_unavailable(monkeypatch, exc):
     # Can't tell -> don't hide a real session.
     _fake_tasklist(monkeypatch, exc=exc)
     assert _real_is_running() is True
+
+
+# --------------------------------------------------------------------------
+# status output, in-process (the subprocess tests above don't count toward coverage)
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize("status,expected", [
+    ({"active": False}, "inactive"),
+    ({"active": True, "source": "user", "requestedDuration": -1}, "active (source=user) indefinite"),
+    ({"active": True, "source": "schedule", "requestedDuration": None}, "active (source=schedule) indefinite"),
+    ({"active": True, "source": "download", "requestedDuration": 600, "remainingSeconds": 3725.9},
+     "active (source=download) remaining=1:02:05"),
+    ({"active": True, "requestedDuration": 600, "remainingSeconds": None}, "active (source=?)"),
+])
+def test_format_status_human(status, expected):
+    assert kya._format_status_human(status) == expected
+
+
+def test_cmd_status_json_and_human_in_process(patched_log, capsys):
+    started = (datetime.now(timezone.utc) - timedelta(seconds=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    patched_log([{"startedAt": started, "source": "user", "requestedDuration": 600}])
+
+    assert kya.main(["status", "--json"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["active"] is True and 0 < out["remainingSeconds"] <= 600
+
+    assert kya.main(["status"]) == 0
+    assert capsys.readouterr().out.startswith("active (source=user) remaining=0:")
+
+
+def test_cmd_status_inactive_exit_code(patched_log, capsys):
+    patched_log([])
+    assert kya.main(["status"]) == 1
+    assert capsys.readouterr().out == "inactive\n"

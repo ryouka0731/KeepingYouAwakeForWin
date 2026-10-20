@@ -1,5 +1,6 @@
 using KeepingYouAwake.Core;
 using KeepingYouAwake.Core.Platform;
+using PowerStatus = KeepingYouAwake.Core.Platform.PowerStatus;
 
 namespace KeepingYouAwake.Core.Tests;
 
@@ -182,4 +183,11 @@ internal sealed class ControllerHarness : IDisposable
         Controller.Dispose();
         try { System.IO.Directory.Delete(Directory, recursive: true); } catch (IOException) { }
     }
+}
+
+/// <summary>Tests that switch <see cref="Strings"/>' language share global state and must not run in parallel.</summary>
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class StringsCollection
+{
+    public const string Name = "Strings";
 }

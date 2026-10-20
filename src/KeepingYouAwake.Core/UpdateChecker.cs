@@ -18,7 +18,7 @@ public sealed class UpdateChecker(HttpClient http, string repository = UpdateChe
     public async Task<ReleaseInfo?> FindUpdateAsync(string current, bool includePreReleases, CancellationToken cancellationToken = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, $"https://api.github.com/repos/{repository}/releases?per_page=30");
-        request.Headers.UserAgent.Add(new ProductInfoHeaderValue("KeepingYouAwake", ParseVersion(current)?.Version.ToString() ?? "0"));
+        request.Headers.UserAgent.Add(new ProductInfoHeaderValue("KeepingYouAwake", ParseVersion(current)?.Version.ToString(3) ?? "0"));
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
         using var response = await http.SendAsync(request, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
@@ -32,25 +32,37 @@ public sealed class UpdateChecker(HttpClient http, string repository = UpdateChe
         var currentVersion = ParseVersion(current);
         if (currentVersion is null) { return null; }
 
-        ReleaseInfo? best = null;
         using var document = JsonDocument.Parse(releasesJson);
         if (document.RootElement.ValueKind != JsonValueKind.Array) { return null; }
-        foreach (var release in document.RootElement.EnumerateArray())
-        {
-            if (release.TryGetProperty("draft", out var draft) && draft.ValueKind == JsonValueKind.True) { continue; }
-            var pre = release.TryGetProperty("prerelease", out var p) && p.ValueKind == JsonValueKind.True;
-            if (pre && !includePreReleases) { continue; }
-            if (!release.TryGetProperty("tag_name", out var tagElement) || tagElement.GetString() is not { } tag) { continue; }
-            if (ParseVersion(tag) is not { } parsed) { continue; }
-            var url = release.TryGetProperty("html_url", out var u) ? u.GetString() ?? string.Empty : string.Empty;
-            var info = new ReleaseInfo(tag, parsed.Version, parsed.Label, url, pre || parsed.Label is not null);
-            if (info.IsPreRelease && !includePreReleases) { continue; }
-            if (best is null || Compare(info.Version, info.PreReleaseLabel, best.Version, best.PreReleaseLabel) > 0) { best = info; }
-        }
+
+        var best = document.RootElement.EnumerateArray()
+            .Select(ParseRelease)
+            .OfType<ReleaseInfo>()
+            .Where(r => includePreReleases || !r.IsPreRelease)
+            .Aggregate((ReleaseInfo?)null, (newest, r) => newest is null || IsNewer(r, newest) ? r : newest);
 
         if (best is null) { return null; }
         return Compare(best.Version, best.PreReleaseLabel, currentVersion.Value.Version, currentVersion.Value.Label) > 0 ? best : null;
     }
+
+    /// <summary>A published release from the API, or null for drafts and tags that aren't versions.</summary>
+    internal static ReleaseInfo? ParseRelease(JsonElement release)
+    {
+        if (release.ValueKind != JsonValueKind.Object) { return null; }
+        if (IsTrue(release, "draft")) { return null; }
+        if (!release.TryGetProperty("tag_name", out var tagElement) || tagElement.ValueKind != JsonValueKind.String) { return null; }
+        var tag = tagElement.GetString()!;
+        if (ParseVersion(tag) is not { } parsed) { return null; }
+        var url = release.TryGetProperty("html_url", out var u) && u.ValueKind == JsonValueKind.String ? u.GetString()! : string.Empty;
+        var preRelease = IsTrue(release, "prerelease") || parsed.Label is not null;
+        return new ReleaseInfo(tag, parsed.Version, parsed.Label, url, preRelease);
+    }
+
+    private static bool IsTrue(JsonElement element, string property) =>
+        element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.True;
+
+    private static bool IsNewer(ReleaseInfo a, ReleaseInfo b) =>
+        Compare(a.Version, a.PreReleaseLabel, b.Version, b.PreReleaseLabel) > 0;
 
     /// <summary>Parses <c>v1.2.3</c>, <c>1.2</c>, <c>1.2.3-beta.1</c>. Build metadata (<c>+…</c>) is ignored.</summary>
     public static (Version Version, string? Label)? ParseVersion(string text)

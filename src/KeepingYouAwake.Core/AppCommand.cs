@@ -8,6 +8,7 @@ public enum AppCommandKind
     Deactivate,
     Toggle,
     ShowSettings,
+    Quit,
 }
 
 /// <summary>
@@ -38,6 +39,7 @@ public sealed record AppCommand(AppCommandKind Kind, TimeSpan? Duration = null, 
             "deactivate" => new AppCommand(AppCommandKind.Deactivate),
             "toggle" => new AppCommand(AppCommandKind.Toggle),
             "settings" or "preferences" => new AppCommand(AppCommandKind.ShowSettings),
+            "quit" => new AppCommand(AppCommandKind.Quit),
             _ => null,
         };
     }
@@ -57,6 +59,7 @@ public sealed record AppCommand(AppCommandKind Kind, TimeSpan? Duration = null, 
             "--deactivate" or "/deactivate" => new AppCommand(AppCommandKind.Deactivate),
             "--toggle" or "/toggle" => new AppCommand(AppCommandKind.Toggle),
             "--settings" or "/settings" => new AppCommand(AppCommandKind.ShowSettings),
+            "--quit" or "/quit" => new AppCommand(AppCommandKind.Quit),
             _ => null,
         };
     }

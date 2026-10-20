@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Component and platform tests for the WinForms app. They run on Windows only
+       (CI: windows-latest); elsewhere the project builds but has nothing to run. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="coverlet.collector" Version="6.0.2" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Xunit" />
+    <!-- Shares the platform fakes and controller harness with the Core tests. -->
+    <Compile Include="..\KeepingYouAwake.Core.Tests\Fakes.cs" Link="Shared\Fakes.cs" />
+    <ProjectReference Include="..\..\src\KeepingYouAwake\KeepingYouAwake.csproj" />
+  </ItemGroup>
+</Project>

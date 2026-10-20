@@ -462,3 +462,21 @@ def test_kya_is_running_false_when_no_match(monkeypatch):
 def test_kya_is_running_true_when_tasklist_unavailable(monkeypatch, exc):
     _fake_tasklist(monkeypatch, exc=exc)
     assert _ORIGINAL_IS_RUNNING() is True
+
+
+@pytest.mark.parametrize("value,expected", [("YES", True), ("0", False), ("false", False)])
+def test_set_default_accepts_boolean_strings(settings_dir, value, expected):
+    out = json.loads(_text(_call("kya_set_default", {"key": "mouseJiggler", "value": value})))
+    assert out["set"] is True and out["value"] is expected
+
+
+def test_activate_url_mapping():
+    assert srv._activate_url(90) == "keepingyouawake:///activate?seconds=90"
+    assert srv._activate_url(12.7) == "keepingyouawake:///activate?seconds=12"
+    assert srv._activate_url("indefinite") == "keepingyouawake:///activate?seconds=0"
+    assert srv._activate_url("forever") is None
+
+
+def test_handler_reports_unknown_duration_string():
+    # The SDK's schema validation normally rejects this first; the handler guards anyway.
+    assert "unknown duration string" in _text(_call("kya_activate", {"duration": "forever"}))
