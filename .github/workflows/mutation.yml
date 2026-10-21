@@ -1,0 +1,47 @@
+name: Mutation testing
+
+# Stryker.NET mutates the Core library and reruns its tests; surviving mutants
+# point at behaviour the tests don't pin down. Too slow for every PR, so it runs
+# weekly and on demand. The HTML/Markdown report is uploaded as an artifact and
+# summarized on the run page.
+
+on:
+  schedule:
+    - cron: '23 4 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+
+jobs:
+  stryker:
+    name: Stryker.NET (Core)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120 # every test runs against every mutant (coverage-analysis: all)
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Run Stryker
+        run: |
+          dotnet tool restore
+          dotnet tool run dotnet-stryker -f stryker-config.json --break-at 60
+
+      - name: Summary
+        if: always()
+        run: cat StrykerOutput/*/reports/mutation-report.md >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mutation-report
+          path: StrykerOutput/*/reports
+          if-no-files-found: ignore

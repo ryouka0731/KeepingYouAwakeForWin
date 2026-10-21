@@ -12,6 +12,16 @@ internal sealed class UpdateService : IDisposable
     private readonly HttpClient http;
     private readonly string repository;
     private readonly Timer timer = new() { Interval = (int)TimeSpan.FromHours(1).TotalMilliseconds };
+
+    /// <summary>Delay before the first background check (the app settles and the network comes up at login).</summary>
+    internal TimeSpan InitialDelay { get; init; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>How often background checks look whether a check is due.</summary>
+    internal TimeSpan PollInterval
+    {
+        get => TimeSpan.FromMilliseconds(timer.Interval);
+        init => timer.Interval = (int)value.TotalMilliseconds;
+    }
     private Task<ReleaseInfo?>? inFlight;
 
     /// <summary>Creates the service; nothing is checked until <see cref="StartBackgroundChecks"/> or <see cref="CheckNowAsync"/>.</summary>
@@ -38,8 +48,7 @@ internal sealed class UpdateService : IDisposable
     public void StartBackgroundChecks()
     {
         timer.Start();
-        // Give the app a moment to settle (and the network to come up at login).
-        var initial = new Timer { Interval = 30_000 };
+        var initial = new Timer { Interval = Math.Max(1, (int)InitialDelay.TotalMilliseconds) };
         initial.Tick += async (_, _) =>
         {
             initial.Dispose();

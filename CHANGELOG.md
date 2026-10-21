@@ -7,6 +7,10 @@ All notable changes to KeepingYouAwake for Windows are documented here. The form
 ### Added
 - `--quit` / `keepingyouawake:///quit` to close the app from scripts; `KEEPINGYOUAWAKE_DATA_DIR` to relocate settings and the activity log.
 - Component, platform, API (MCP over stdio, GitHub releases) and end-to-end tests; coverage and complexity gates in CI; [code metrics report](docs/code-metrics.md).
+- Property-based and model-based tests (FsCheck) and weekly mutation testing (Stryker.NET, Core score 90.9%).
+
+### Fixed
+- Settings: a failed Start at Login change showed its error twice.
 
 ### Changed
 - Win32 result decoding and the tray menu / tooltip moved into the platform-independent core; complex functions split up (max cyclomatic complexity 21 → 10).

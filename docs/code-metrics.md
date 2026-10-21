@@ -3,7 +3,7 @@
 KeepingYouAwake for Windows のテスト網羅性とコード品質の指標です。
 
 - 計測日: 2026-10-21
-- 比較対象: テスト拡充の前は `main`（52b0bec、v1.0.0 時点）、後は PR #6 と PR #8
+- 比較対象: テスト拡充の前は `main`（52b0bec、v1.0.0 時点）、後は PR #6・#8・#9
 - 計測方法: 前後どちらの値も [`scripts/code_metrics.py`](../scripts/code_metrics.py) で集計しています。
   - 「改善前」の Core と Python は、52b0bec を別の作業ツリーに展開し、同じツール（coverlet、ReportGenerator、pytest-cov、lizard）・同じ除外条件で計測し直した値です。
   - 改善前の Windows アプリにはテストがありませんでした。
@@ -13,19 +13,21 @@ KeepingYouAwake for Windows のテスト網羅性とコード品質の指標で�
 
 | 指標 | 改善前 | 改善後 |
 |---|---:|---:|
-| テストの総数 | 231（＋CI のスモークテスト 1 本） | **398** |
-| C# Core のユニットテスト | 110 | **193** |
-| Windows アプリのコンポーネント／プラットフォームテスト | 0 | **57** |
+| テストの総数 | 231（＋CI のスモークテスト 1 本） | **454** |
+| C# Core のユニット・性質ベーステスト | 110 | **241** |
+| Windows アプリのコンポーネント／プラットフォームテスト | 0 | **65** |
 | Python のテスト（ユニット・プロトコル） | 121 | **137** |
 | e2e テスト（配布用 exe を実際に操作） | 0（スモークテスト 1 ステップのみ） | **11** |
-| Core の行／分岐カバレッジ | 93.6% / 80.0% | **99.1% / 93.8%** |
-| Windows アプリの行／分岐カバレッジ | 0% / 0%（テストなし） | **92.2% / 75.1%** |
+| Core の行／分岐カバレッジ | 93.6% / 80.0% | **99.2% / 96.2%** |
+| Windows アプリの行／分岐カバレッジ | 0% / 0%（テストなし） | **96.1% / 81.2%** |
 | Python ツールの行／分岐カバレッジ | 96.3% / 90.3% | **98.7% / 98.2%** |
-| 平均循環的複雑度（CCN） | 3.22 | **2.78** |
+| 平均循環的複雑度（CCN） | 3.22 | **2.77** |
 | 最大 CCN | 21 | **10** |
 | CCN が 10 を超える関数 | 10 | **0** |
 | 50 NLOC を超える関数 | 4 | **0** |
 | 引数が 5 個を超える関数 | 1 | **0** |
+| 変異スコア（Core、Stryker.NET） | 81.0%（最初の正しい計測時点） | **90.9%** |
+| 性質ベース／モデルベーステスト | 0 | **16**（性質 15、モデル 1） |
 | 本番の C# コード行数 | 4,702 | 5,087 |
 | テストコード行数 | 2,430 | 4,419 |
 
@@ -34,7 +36,7 @@ KeepingYouAwake for Windows のテスト網羅性とコード品質の指標で�
 | 閾値 | 値 |
 |---|---|
 | Core のカバレッジ | 行 97% 以上、分岐 90% 以上 |
-| Windows アプリのカバレッジ | 行 90% 以上、分岐 70% 以上 |
+| Windows アプリのカバレッジ | 行 94% 以上、分岐 78% 以上 |
 | Python のカバレッジ | 行 97% 以上、分岐 95% 以上 |
 | 関数ごとの上限 | CCN 10 以下、50 NLOC 以下、引数 5 個以下 |
 
@@ -47,6 +49,14 @@ KeepingYouAwake for Windows のテスト網羅性とコード品質の指標で�
 | コンポーネント | `tests/KeepingYouAwake.Tests`（`ComponentTests`、`ServiceTests`、`DialogAndProbeTests`） | Windows | トレイメニュー、設定画面の 7 タブ、各ダイアログ、アクティビティログ画面。WinForms のコントロールを実際に操作し、設定が書き換わることと画面に反映されることを確認。ダイアログ経由の操作（時間の追加・リセット、監視項目の追加、アクティブ時間の編集、アップデート確認の結果表示）は、回答を用意した `IUserPrompts` で検証。本物のダイアログ（WinForms 製・メッセージボックス・ファイル／フォルダー選択）は、表示中の待機ループの中から自動で応答させて検証 |
 | プラットフォーム | `tests/KeepingYouAwake.Tests`（`PlatformTests`） | Windows | 実際の Win32 API（電源要求、電源状態、ディスプレイ構成、Native Wifi、Core Audio、CPU 時間、入力）。レジストリは専用のサンドボックスに書く。単一インスタンス用の名前付きパイプ、UI スケジューラ |
 | e2e | `tools/e2e/test_e2e_windows.py` | Windows CI | 配布用の exe を起動し、`kya` CLI（URL スキーム経由）、転送されたコマンドライン引数、`settings.json` の書き換えで操作。アクティビティログと `powercfg /requests` で結果を確認。時間切れ、監視アプリ、ダウンロードトリガー、ユーザーのセッションを保護する動作、正常終了、強制終了からの復旧を含む |
+
+### 性質ベース・モデルベース・変異テスト
+
+| 種類 | 場所 | 内容 |
+|---|---|---|
+| 性質ベース | `PropertyTests`（FsCheck） | ランダムに生成した入力で、どんな入力でも成り立つべき性質を検証します。失敗したときは、失敗する最小の入力まで自動で絞り込みます（シュリンク）。対象は次のとおりです。<br>・アクティブ時間の判定を、別の方法で実装した判定結果（分単位で数え上げる方法）と突き合わせる<br>・バージョンの比較が全順序になっていること<br>・URL で指定した時間がそのまま往復すること<br>・残り時間の表示を読み戻すと元の秒数になること<br>・監視リストの編集が、大文字小文字を区別しない集合として振る舞うこと<br>・インスタンス間メッセージが往復すること<br>・CPU 使用率が 0〜100% に収まること<br>・電源状態の解釈がどの値の組でも結果を返すこと |
+| モデルベース | `ControllerModelPropertyTests` | ユーザー操作、アプリの起動と終了、ダウンロード、AC の抜き差し、ディスプレイ接続、時間経過をランダムな順番で与え、各ステップの後に次の 3 点を確認します。<br>・電源要求を持っているのはセッション中だけ<br>・手動で始めたセッションをトリガーが止めない<br>・アクティビティログで開いたままの記録が 1 件だけ<br>トリガーの所有者チェックをわざと壊すと、16 通り目のランダムな手順で検出しました。 |
+| 変異テスト | `stryker-config.json`、`.github/workflows/mutation.yml` | Stryker.NET が Core にわざと小さな不具合（変異）を入れ、テストが落ちるかを調べます。CI では毎週と手動で実行します。<br>最初は既定の「テストごとの網羅判定」で計測して 57.3% でした。ところが生き残った変異を手で再現すると、実際にはテストが落ちるものが含まれていました。そこで、全テストを全変異に対して実行する設定にしました。<br>正しい初期値 81.0% から、生き残った変異をもとにテストを追加して 90.9% まで上げました。 |
 
 ## 実施した改善
 
@@ -88,6 +98,8 @@ KeepingYouAwake for Windows のテスト網羅性とコード品質の指標で�
 - **MCP サーバーの実際の挙動**: 不正な引数は、ツールの処理より先に SDK のスキーマ検証で弾かれます。プロトコルレベルのテストで初めて確認できました。
 - **アプリ全体で共有される UI 状態**: `UiThread` と `SystemEvents` はプロセス全体で 1 つです。WinForms のテストは並列ではなく 1 件ずつ実行するようにしました。
 - **カバレッジ計測の欠落**: coverlet が `System.Windows.Forms` を解決できず、アプリ本体（`KeepingYouAwake.dll`）を計測対象から黙って外していました。テスト基盤の診断ログで原因を特定し、`PreserveCompilationContext` で解消しました。あわせて、レポートにコンポーネントが欠けていたら閾値チェックを失敗させるようにしました。
+- **「ログイン時に起動」のエラーが 2 回表示される**: 設定に失敗したとき、チェックボックスを実際の状態に戻す処理が変更イベントをもう一度発生させ、同じエラーダイアログが 2 回出ていました。コンポーネントテストで見つけて修正しました。
+- **変異テストのツール側の誤判定**: Stryker の既定の網羅判定（テストごとに、どの変異を通るかを記録する方式）が、オブジェクトの生成時に実行されるコードの変異を「どのテストも通らない＝生き残り」と誤って数えていました。上で書いたとおり、全テストを実行する設定に切り替えています。
 - **OK ボタンだけのメッセージボックス**: OK ボタンの ID を送っても閉じません（`WM_CLOSE` で閉じる）。自動応答のヘルパーに反映しました。
 
 ## 未カバーの部分とその理由
@@ -104,6 +116,14 @@ KeepingYouAwake for Windows のテスト網羅性とコード品質の指標で�
   - 実際の HKCU を使う既定のインスタンス。テストはレジストリのサンドボックスを使います。
 - **`Program.cs`**: アプリの起点で、e2e テストが実際の exe として毎回実行しています。ユニットテストのカバレッジ計測からは除外しています（`[ExcludeFromCodeCoverage]`）。
 
+## 生き残っている変異（約 80 件）の内訳
+
+| 分類 | 例 | 理由 |
+|---|---|---|
+| 等価な変異 | 二重呼び出しを防ぐ判定の削除、`Dispose` の順序、`ConfigureAwait(false→true)`、上限ちょうどでの切り詰め（`<` と `<=`） | 振る舞いが変わらないため、どんなテストでも区別できません |
+| Windows 専用の処理 | ping ファイルの隠し属性の付与・解除 | Stryker は macOS / Linux で動かしているため、このコードは実行されません（Windows 側の処理は Windows CI のテストで確認しています） |
+| 意図的に起こすのが難しい I/O 障害 | 書き込み途中の失敗、ファイルを移動して置き換える処理の失敗 | 失敗を確実に再現できず、テストが不安定になります |
+
 ## 再計測の方法
 
 ```powershell
@@ -113,6 +133,7 @@ dotnet tool restore
 dotnet tool run reportgenerator "-reports:TestResults/**/coverage.cobertura.xml" -targetdir:coverage -reporttypes:Cobertura "-filefilters:-**/obj/**"
 pytest --cov=tools/cli --cov=tools/mcp-server --cov-branch --cov-report=xml:python-coverage.xml
 python scripts/code_metrics.py --dotnet coverage/Cobertura.xml --python python-coverage.xml --update docs/code-metrics.md --check
+dotnet tool run dotnet-stryker -f stryker-config.json   # 変異テスト（約 60 分）
 ```
 
 CI では毎回、同じ表を GitHub Actions のジョブサマリーに出力しています。
@@ -124,8 +145,8 @@ CI では毎回、同じ表を GitHub Actions のジョブサマリーに出力�
 
 | Component | Line | Branch | Covered / coverable lines |
 |---|---:|---:|---:|
-| `KeepingYouAwake` (.NET) | 92.2% | 75.1% | 1146 / 1243 |
-| `KeepingYouAwake.Core` (.NET) | 99.1% | 93.8% | 1288 / 1300 |
+| `KeepingYouAwake` (.NET) | 96.1% | 81.2% | 1207 / 1256 |
+| `KeepingYouAwake.Core` (.NET) | 99.2% | 96.2% | 1290 / 1300 |
 | Python tools (`kya`, MCP server) | 98.7% | 98.2% | 887 / 899 |
 
 Lowest-covered files:
@@ -133,21 +154,21 @@ Lowest-covered files:
 | File | Line coverage |
 |---|---:|
 | `KeepingYouAwake/Windows/NetworkAndAudio.cs` | 60.3% (47/78) |
-| `KeepingYouAwake/UI/UpdateService.cs` | 78.6% (33/42) |
-| `KeepingYouAwake/Windows/ShellIntegration.cs` | 85.4% (70/82) |
-| `KeepingYouAwake/Windows/PowerServices.cs` | 86.0% (117/136) |
 | `KeepingYouAwake.Core/DriveAliveTimer.cs` | 92.0% (81/88) |
 | `KeepingYouAwake/Windows/WinFormsScheduler.cs` | 93.3% (28/30) |
 | `kya_mcp_server.py` | 93.9% (168/179) |
-| `KeepingYouAwake/UI/TrayApplicationContext.cs` | 94.6% (174/184) |
+| `KeepingYouAwake/Windows/ShellIntegration.cs` | 93.9% (77/82) |
+| `KeepingYouAwake/UI/UserPrompts.cs` | 95.5% (21/22) |
+| `KeepingYouAwake/UI/Dialogs.cs` | 96.9% (156/161) |
+| `KeepingYouAwake/Windows/PowerServices.cs` | 97.9% (139/142) |
 
 ### Complexity
 
 | Metric | Value |
 |---|---:|
-| Functions | 334 |
-| Function NLOC (total) | 3184 |
-| Average cyclomatic complexity (CCN) | 2.78 |
+| Functions | 338 |
+| Function NLOC (total) | 3197 |
+| Average cyclomatic complexity (CCN) | 2.77 |
 | Max CCN | 10 |
 | Functions with CCN > 10 | 0 |
 | Functions longer than 50 NLOC | 0 |
@@ -163,7 +184,7 @@ Most complex functions:
 | `ActivityLogEntry::RecordStarted` | `src/KeepingYouAwake.Core/ActivityLogger.cs:73` | 9 | 28 |
 | `ReleaseInfo::ParseVersion` | `src/KeepingYouAwake.Core/UpdateChecker.cs:68` | 9 | 17 |
 | `ScheduleWindow::Contains` | `src/KeepingYouAwake.Core/ScheduleWindow.cs:27` | 9 | 15 |
-| `TrayOptions::Perform` | `src/KeepingYouAwake/UI/TrayApplicationContext.cs:246` | 9 | 14 |
+| `TrayOptions::Perform` | `src/KeepingYouAwake/UI/TrayApplicationContext.cs:252` | 9 | 14 |
 | `ReleaseInfo::ParseRelease` | `src/KeepingYouAwake.Core/UpdateChecker.cs:49` | 9 | 11 |
 | `PlatformServices::OnSessionEnded` | `src/KeepingYouAwake.Core/AppController.cs:271` | 9 | 10 |
 | `_current_status` | `tools/mcp-server/kya_mcp_server.py:218` | 8 | 25 |
