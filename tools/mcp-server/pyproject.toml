@@ -8,7 +8,7 @@ license = { text = "MIT" }
 classifiers = ["Operating System :: Microsoft :: Windows"]
 authors = [{ name = "Ryoka Nakai", email = "ryouka0731@gmail.com" }]
 dependencies = [
-    "mcp>=1.0.0,<2",
+    "mcp>=2.3,<3",
 ]
 
 [project.optional-dependencies]

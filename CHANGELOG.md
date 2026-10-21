@@ -13,6 +13,8 @@ All notable changes to KeepingYouAwake for Windows are documented here. The form
 - Settings: a failed Start at Login change showed its error twice.
 
 ### Changed
+- `kya-mcp-server` targets MCP Python SDK 2.x (`mcp>=2.3,<3`).
+- Test and CI dependencies updated (xunit runner 4, coverlet 10, Test SDK 18; checkout / setup-python v7, CodeQL 4.39, Scorecard 2.5, SignPath action v3).
 - Win32 result decoding and the tray menu / tooltip moved into the platform-independent core; complex functions split up (max cyclomatic complexity 21 → 10).
 - Update-check User-Agent reports the version as `x.y.z`.
 
