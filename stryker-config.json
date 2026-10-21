@@ -6,6 +6,7 @@
     "reporters": ["html", "json", "markdown", "progress"],
     "thresholds": { "high": 80, "low": 65, "break": 0 },
     "mutation-level": "Standard",
+    "coverage-analysis": "all",
     "concurrency": 4
   }
 }
