@@ -26,7 +26,7 @@ It is a Windows port of [KeepingYouAwake (Amphetamine)](https://github.com/ryouk
 | 👥 | Pause when you switch to another user, resume when you come back |
 | 📜 | Activity log of every session (`%APPDATA%\KeepingYouAwake\activity.jsonl`) |
 | 🔗 | `keepingyouawake:` URL scheme, command-line switches, a Python CLI and an MCP server |
-| 🌐 | English and Japanese |
+| 🌐 | 22 languages: Chinese (Simplified, Traditional), Danish, Dutch, English, Finnish, French, German, Greek, Hindi, Indonesian, Italian, Japanese, Korean, Polish, Portuguese, Russian, Slovak, Spanish, Turkish, Ukrainian, Vietnamese — following the Windows display language |
 
 Every watched item has a checkbox to pause it without removing it. A trigger only starts a session when none is running, and only ends the session it started — it never ends one you started yourself.
 

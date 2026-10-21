@@ -4,6 +4,9 @@
     <RootNamespace>KeepingYouAwake.Core</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Localization\*.json" LogicalName="Localization.%(Filename).json" />
+  </ItemGroup>
+  <ItemGroup>
     <InternalsVisibleTo Include="KeepingYouAwake.Core.Tests" />
     <InternalsVisibleTo Include="KeepingYouAwake.Tests" />
   </ItemGroup>

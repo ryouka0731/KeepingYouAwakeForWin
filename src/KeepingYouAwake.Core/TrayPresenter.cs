@@ -129,7 +129,7 @@ public static class TrayPresenter
     /// <summary>"Mon, Tue  09:00–17:00" / "月・火  09:00–17:00".</summary>
     public static string DescribeScheduleWindow(ScheduleWindow window)
     {
-        var days = string.Join(Strings.IsJapanese ? "・" : ", ", window.Weekdays.Select(Strings.WeekdayName));
+        var days = string.Join(Strings.Get("List.separator"), window.Weekdays.Select(Strings.WeekdayName));
         static string Time(int minutes) => $"{minutes / 60:00}:{minutes % 60:00}";
         return $"{days}  {Time(window.StartMinutes)}–{Time(window.EndMinutes)}";
     }

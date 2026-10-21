@@ -4,6 +4,9 @@ All notable changes to KeepingYouAwake for Windows are documented here. The form
 
 ## [Unreleased]
 
+### Added
+- The UI is available in 22 languages (da, de, el, en, es, fi, fr, hi, id, it, ja, ko, nl, pl, pt, ru, sk, tr, uk, vi, zh-Hans, zh-Hant), with plural forms and localized weekday names; the language follows the Windows display language.
+
 ## [1.1.0] - 2026-10-21
 
 ### Added
