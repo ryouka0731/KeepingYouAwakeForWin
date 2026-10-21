@@ -35,22 +35,22 @@ public static class Strings
     {
         for (var c = culture; !string.IsNullOrEmpty(c.Name); c = c.Parent)
         {
-            var name = c.Name;
-            if (name.StartsWith("zh", StringComparison.OrdinalIgnoreCase))
+            if (c.Name.StartsWith("zh", StringComparison.OrdinalIgnoreCase))
             {
-                var traditional = name.Contains("Hant", StringComparison.OrdinalIgnoreCase)
-                    || name.EndsWith("-TW", StringComparison.OrdinalIgnoreCase)
-                    || name.EndsWith("-HK", StringComparison.OrdinalIgnoreCase)
-                    || name.EndsWith("-MO", StringComparison.OrdinalIgnoreCase);
-                return traditional && Tables.Value.ContainsKey("zh-Hant") ? "zh-Hant" : Available("zh");
+                return Available(IsTraditionalChinese(c.Name) ? "zh-Hant" : "zh");
             }
-            if (Tables.Value.ContainsKey(name)) { return name; }
+            if (Tables.Value.ContainsKey(c.Name)) { return c.Name; }
             if (Tables.Value.ContainsKey(c.TwoLetterISOLanguageName)) { return c.TwoLetterISOLanguageName; }
         }
         return FallbackLanguage;
-
-        static string Available(string code) => Tables.Value.ContainsKey(code) ? code : FallbackLanguage;
     }
+
+    private static string Available(string code) => Tables.Value.ContainsKey(code) ? code : FallbackLanguage;
+
+    private static readonly string[] TraditionalChineseMarkers = ["Hant", "-TW", "-HK", "-MO"];
+
+    private static bool IsTraditionalChinese(string cultureName) =>
+        TraditionalChineseMarkers.Any(marker => cultureName.Contains(marker, StringComparison.OrdinalIgnoreCase));
 
     public static string Get(string key) => Get(key, Language);
 
@@ -79,20 +79,25 @@ public static class Strings
         reason is null ? string.Empty : Has("Reason." + reason, FallbackLanguage) ? Get("Reason." + reason) : reason;
 
     /// <summary>CLDR plural category of <paramref name="n"/> in <paramref name="language"/> (the languages bundled here).</summary>
-    public static string PluralCategory(string language, long n)
+    public static string PluralCategory(string language, long n) => language switch
+    {
+        "ja" or "zh" or "zh-Hant" or "ko" or "vi" or "id" or "tr" => "other",
+        "fr" or "hi" => n is 0 or 1 ? "one" : "other",
+        "ru" or "uk" or "pl" => SlavicCategory(n, oneEndsInOne: language != "pl"),
+        "sk" => n == 1 ? "one" : n is >= 2 and <= 4 ? "few" : "many",
+        _ => n == 1 ? "one" : "other",
+    };
+
+    /// <summary>
+    /// East Slavic (ru, uk: 1, 21, 31… are "one") and Polish (only 1 is "one") rules: numbers
+    /// ending in 2–4, except 12–14, are "few"; the rest are "many".
+    /// </summary>
+    private static string SlavicCategory(long n, bool oneEndsInOne)
     {
         var mod10 = n % 10;
         var mod100 = n % 100;
-        var twoToFour = mod10 is >= 2 and <= 4 && mod100 is < 12 or > 14;
-        return language switch
-        {
-            "ja" or "zh" or "zh-Hant" or "ko" or "vi" or "id" or "tr" => "other",
-            "fr" or "hi" => n is 0 or 1 ? "one" : "other",
-            "ru" or "uk" => mod10 == 1 && mod100 != 11 ? "one" : twoToFour ? "few" : "many",
-            "pl" => n == 1 ? "one" : twoToFour ? "few" : "many",
-            "sk" => n == 1 ? "one" : n is >= 2 and <= 4 ? "few" : "many",
-            _ => n == 1 ? "one" : "other",
-        };
+        if (oneEndsInOne ? mod10 == 1 && mod100 != 11 : n == 1) { return "one"; }
+        return mod10 is >= 2 and <= 4 && mod100 is < 12 or > 14 ? "few" : "many";
     }
 
     /// <summary>A unit (<c>hour</c>, <c>minute</c>, <c>second</c>) with the plural form <paramref name="n"/> needs.</summary>
