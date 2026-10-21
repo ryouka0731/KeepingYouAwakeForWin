@@ -78,7 +78,7 @@ public class PropertyTests
         Prop.ForAll(Versions, Versions, Versions, (a, b, c) =>
             Compare(a, a) == 0
             && Compare(a, b) == -Compare(b, a)
-            && (Compare(a, b) > 0 && Compare(b, c) > 0 ? Compare(a, c) > 0 : true));
+            && (Compare(a, b) <= 0 || Compare(b, c) <= 0 || Compare(a, c) > 0)); // transitivity
 
     [Property]
     public Property AReleaseOutranksItsPreReleases() =>

@@ -106,6 +106,8 @@ internal sealed class WindowsPowerSource : IPowerSource, IDisposable
 
     private readonly Func<PowerStatus> read;
 
+    /// <summary>Reads the status now and refreshes it on power broadcasts and every 30 seconds.</summary>
+    /// <param name="scheduler">Drives the periodic refresh.</param>
     /// <param name="read">Reads the current status; replaceable so tests can simulate changes.</param>
     public WindowsPowerSource(IScheduler scheduler, Func<PowerStatus>? read = null)
     {
@@ -171,6 +173,7 @@ internal sealed class DisplayConfigMonitor : IDisplayMonitor, IDisposable
 {
     private readonly Func<int> count;
 
+    /// <summary>Counts external displays now and again on every display configuration change.</summary>
     /// <param name="count">Counts external displays; replaceable so tests can simulate changes.</param>
     public DisplayConfigMonitor(Func<int>? count = null)
     {
