@@ -4,6 +4,8 @@ All notable changes to KeepingYouAwake for Windows are documented here. The form
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-21
+
 ### Added
 - `--quit` / `keepingyouawake:///quit` to close the app from scripts; `KEEPINGYOUAWAKE_DATA_DIR` to relocate settings and the activity log.
 - Component, platform, API (MCP over stdio, GitHub releases) and end-to-end tests; coverage and complexity gates in CI; [code metrics report](docs/code-metrics.md).
