@@ -39,15 +39,15 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from mcp.server import Server
+    from mcp.server import Server, ServerRequestContext
     from mcp.server.stdio import stdio_server
     import mcp.types as mcp_types
 except ImportError as e:
     print(
         "kya-mcp-server requires the 'mcp' Python package.\n"
         "Install it with one of:\n"
-        "    uv pip install 'mcp>=1.0.0,<2'\n"
-        "    pip install 'mcp>=1.0.0,<2'\n"
+        "    uv pip install 'mcp>=2.3,<3'\n"
+        "    pip install 'mcp>=2.3,<3'\n"
         f"\nUnderlying import error: {e}",
         file=sys.stderr,
     )
@@ -255,9 +255,6 @@ def _current_status() -> dict[str, Any]:
 # MCP server wiring
 # ---------------------------------------------------------------------------
 
-server = Server("kya")
-
-
 # Tool definitions advertised by list_tools(); call_tool() dispatches through _TOOLS.
 TOOL_DEFINITIONS: list[mcp_types.Tool] = [
     mcp_types.Tool(
@@ -330,7 +327,6 @@ TOOL_DEFINITIONS: list[mcp_types.Tool] = [
 ]
 
 
-@server.list_tools()
 async def list_tools() -> list[mcp_types.Tool]:
     return TOOL_DEFINITIONS
 
@@ -395,12 +391,27 @@ _TOOLS: dict[str, Any] = {
 }
 
 
-@server.call_tool()
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[mcp_types.TextContent]:
     handler = _TOOLS.get(name)
     if handler is None:
         return _text(f"unknown tool: {name}")
     return _text(handler(arguments))
+
+
+# MCP SDK 2.x low-level handlers: (ctx, params) -> full result types.
+async def _on_list_tools(
+    ctx: ServerRequestContext, params: mcp_types.PaginatedRequestParams | None
+) -> mcp_types.ListToolsResult:
+    return mcp_types.ListToolsResult(tools=await list_tools())
+
+
+async def _on_call_tool(
+    ctx: ServerRequestContext, params: mcp_types.CallToolRequestParams
+) -> mcp_types.CallToolResult:
+    return mcp_types.CallToolResult(content=await call_tool(params.name, params.arguments or {}))
+
+
+server = Server("kya", on_list_tools=_on_list_tools, on_call_tool=_on_call_tool)
 
 
 def main() -> None:

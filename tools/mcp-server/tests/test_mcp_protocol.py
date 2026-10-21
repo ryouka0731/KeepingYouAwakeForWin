@@ -64,7 +64,7 @@ def test_lists_all_tools_with_schemas(appdata):
         "kya_activate", "kya_deactivate", "kya_toggle",
         "kya_status", "kya_list_recent_sessions", "kya_set_default",
     }
-    assert tools["kya_set_default"].inputSchema["required"] == ["key", "value"]
+    assert tools["kya_set_default"].input_schema["required"] == ["key", "value"]
     assert "mouseJiggler" in tools["kya_set_default"].description
 
 

@@ -3,7 +3,7 @@
 #   uv pip compile --universal --python-version 3.12 --generate-hashes \
 #     .github/requirements/requirements-python-tests.in -o .github/requirements/requirements-python-tests.txt
 pytest
-mcp>=1.0.0,<2
+mcp>=2.3,<3
 pytest-cov
 # Complexity metrics (scripts/code_metrics.py)
 lizard

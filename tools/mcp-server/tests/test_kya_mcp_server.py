@@ -162,9 +162,9 @@ def test_list_tools_returns_six_with_required_keys():
     for t in tools:
         assert t.name
         assert t.description
-        # mcp Tool model exposes inputSchema; it must be a dict-ish schema.
-        assert isinstance(t.inputSchema, dict)
-        assert t.inputSchema.get("type") == "object"
+        # mcp 2.x Tool model exposes input_schema (serialized as inputSchema).
+        assert isinstance(t.input_schema, dict)
+        assert t.input_schema.get("type") == "object"
         # round-trips through JSON (it's an MCP wire payload after all).
         json.dumps(t.model_dump())
         names.add(t.name)
