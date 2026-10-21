@@ -544,4 +544,52 @@ public class ModelMutationTests
     public void ParsedLogSourceComesFromTheEntry() =>
         Assert.Equal("cpu-load", ActivityLogger.Parse(JsonNode.Parse(
             """{"startedAt":"2026-10-21T00:00:00Z","source":"cpu-load"}""")!.AsObject())!.Source);
+
+    [Fact]
+    public void ScheduleMonitorMatchesAnyWindowAndReevaluatesOnChange()
+    {
+        var monday = new DateTime(2026, 10, 19, 12, 0, 0);
+        var scheduler = new FakeScheduler();
+        using var monitor = new ScheduleMonitor(scheduler, _ => monday);
+        var events = new List<string>();
+        monitor.Entered += (_, _) => events.Add("in");
+        monitor.Left += (_, _) => events.Add("out");
+        monitor.Start();
+        monitor.Start(); // one timer
+        Assert.Equal(1, scheduler.ActiveTimers);
+
+        var noon = new ScheduleWindow { Weekdays = [DayOfWeek.Monday], StartMinutes = 11 * 60, EndMinutes = 13 * 60 };
+        var friday = new ScheduleWindow { Weekdays = [DayOfWeek.Friday], StartMinutes = 0, EndMinutes = 60 };
+        monitor.SetWindows([friday, noon]); // evaluated right away; any matching window counts
+        Assert.Equal(["in"], events);
+        monitor.SetWindows([friday]);
+        Assert.Equal(["in", "out"], events);
+    }
+
+    [Fact]
+    public void ACSessionSurvivesAnUnreadableBattery()
+    {
+        using var h = new ControllerHarness(s => s.ActivateOnACPower = true);
+        h.Power.Set(BatteryState.Charging);
+        h.Controller.Start();
+        Assert.Equal(ActivationSource.ACPower, h.Controller.CurrentSource);
+        h.Power.Set(BatteryState.Unknown); // e.g. the battery driver went away: not "unplugged"
+        Assert.Equal(ActivationSource.ACPower, h.Controller.CurrentSource);
+    }
+
+    [Fact]
+    public void IndefiniteSessionNotificationTitle()
+    {
+        try
+        {
+            Strings.OverrideLanguage("en");
+            var (title, body) = TrayPresenter.Notification(new SessionNotification(true, null), DateTimeOffset.UnixEpoch);
+            Assert.Equal(Strings.Get("PreventingSleepTitle"), title);
+            Assert.Equal(Strings.Get("PreventingSleepBody"), body);
+        }
+        finally
+        {
+            Strings.OverrideLanguage(null);
+        }
+    }
 }

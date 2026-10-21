@@ -29,8 +29,8 @@ BEGIN, END = "<!-- metrics:begin -->", "<!-- metrics:end -->"
 THRESHOLDS = {
     ("dotnet", "KeepingYouAwake.Core", "line"): 97.0,
     ("dotnet", "KeepingYouAwake.Core", "branch"): 90.0,
-    ("dotnet", "KeepingYouAwake", "line"): 90.0,
-    ("dotnet", "KeepingYouAwake", "branch"): 70.0,
+    ("dotnet", "KeepingYouAwake", "line"): 94.0,
+    ("dotnet", "KeepingYouAwake", "branch"): 78.0,
     ("python", "*", "line"): 97.0,
     ("python", "*", "branch"): 95.0,
 }
