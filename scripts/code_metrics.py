@@ -30,7 +30,8 @@ THRESHOLDS = {
     ("dotnet", "KeepingYouAwake.Core", "line"): 97.0,
     ("dotnet", "KeepingYouAwake.Core", "branch"): 90.0,
     ("dotnet", "KeepingYouAwake", "line"): 94.0,
-    ("dotnet", "KeepingYouAwake", "branch"): 78.0,
+    # coverlet 10 counts compiler-generated branches too: the same tests read ~4 points lower than on coverlet 6.
+    ("dotnet", "KeepingYouAwake", "branch"): 75.0,
     ("python", "*", "line"): 97.0,
     ("python", "*", "branch"): 95.0,
 }

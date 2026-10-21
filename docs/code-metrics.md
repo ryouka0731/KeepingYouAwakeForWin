@@ -18,8 +18,8 @@ KeepingYouAwake for Windows のテスト網羅性とコード品質の指標で�
 | Windows アプリのコンポーネント／プラットフォームテスト | 0 | **65** |
 | Python のテスト（ユニット・プロトコル） | 121 | **137** |
 | e2e テスト（配布用 exe を実際に操作） | 0（スモークテスト 1 ステップのみ） | **11** |
-| Core の行／分岐カバレッジ | 93.6% / 80.0% | **99.2% / 96.2%** |
-| Windows アプリの行／分岐カバレッジ | 0% / 0%（テストなし） | **96.1% / 81.2%** |
+| Core の行／分岐カバレッジ | 93.6% / 80.0% | **99.2% / 96.2%**（coverlet 10 では 93.9%、※） |
+| Windows アプリの行／分岐カバレッジ | 0% / 0%（テストなし） | **96.1% / 81.2%**（coverlet 10 では 77.5%、※） |
 | Python ツールの行／分岐カバレッジ | 96.3% / 90.3% | **98.7% / 98.2%** |
 | 平均循環的複雑度（CCN） | 3.22 | **2.77** |
 | 最大 CCN | 21 | **10** |
@@ -31,12 +31,14 @@ KeepingYouAwake for Windows のテスト網羅性とコード品質の指標で�
 | 本番の C# コード行数 | 4,702 | 5,087 |
 | テストコード行数 | 2,430 | 4,419 |
 
+※ 前後比較は、改善前と同じ coverlet 6 で計測した値です。PR #10 でカバレッジ計測ツールを coverlet 10 に更新しました。同じコード・同じテストでも、コンパイラが生成した分岐まで数えるため、分岐カバレッジが 3〜4 ポイント低く出ます（行カバレッジは同じです）。後半の「最新の計測値」と CI の閾値は、coverlet 10 の値に合わせてあります。
+
 カバレッジと複雑度の閾値は CI（`metrics` ジョブ）で毎回チェックします。どれかを下回ると PR が失敗します。
 
 | 閾値 | 値 |
 |---|---|
 | Core のカバレッジ | 行 97% 以上、分岐 90% 以上 |
-| Windows アプリのカバレッジ | 行 94% 以上、分岐 78% 以上 |
+| Windows アプリのカバレッジ | 行 94% 以上、分岐 75% 以上 |
 | Python のカバレッジ | 行 97% 以上、分岐 95% 以上 |
 | 関数ごとの上限 | CCN 10 以下、50 NLOC 以下、引数 5 個以下 |
 
@@ -145,9 +147,9 @@ CI では毎回、同じ表を GitHub Actions のジョブサマリーに出力�
 
 | Component | Line | Branch | Covered / coverable lines |
 |---|---:|---:|---:|
-| `KeepingYouAwake` (.NET) | 96.1% | 81.2% | 1207 / 1256 |
-| `KeepingYouAwake.Core` (.NET) | 99.2% | 96.2% | 1290 / 1300 |
-| Python tools (`kya`, MCP server) | 98.7% | 98.2% | 887 / 899 |
+| `KeepingYouAwake` (.NET) | 96.1% | 77.5% | 1207 / 1256 |
+| `KeepingYouAwake.Core` (.NET) | 99.2% | 93.9% | 1290 / 1300 |
+| Python tools (`kya`, MCP server) | 98.4% | 98.2% | 887 / 901 |
 
 Lowest-covered files:
 
@@ -155,8 +157,8 @@ Lowest-covered files:
 |---|---:|
 | `KeepingYouAwake/Windows/NetworkAndAudio.cs` | 60.3% (47/78) |
 | `KeepingYouAwake.Core/DriveAliveTimer.cs` | 92.0% (81/88) |
+| `kya_mcp_server.py` | 92.8% (168/181) |
 | `KeepingYouAwake/Windows/WinFormsScheduler.cs` | 93.3% (28/30) |
-| `kya_mcp_server.py` | 93.9% (168/179) |
 | `KeepingYouAwake/Windows/ShellIntegration.cs` | 93.9% (77/82) |
 | `KeepingYouAwake/UI/UserPrompts.cs` | 95.5% (21/22) |
 | `KeepingYouAwake/UI/Dialogs.cs` | 96.9% (156/161) |
@@ -166,9 +168,9 @@ Lowest-covered files:
 
 | Metric | Value |
 |---|---:|
-| Functions | 338 |
-| Function NLOC (total) | 3197 |
-| Average cyclomatic complexity (CCN) | 2.77 |
+| Functions | 340 |
+| Function NLOC (total) | 3205 |
+| Average cyclomatic complexity (CCN) | 2.76 |
 | Max CCN | 10 |
 | Functions with CCN > 10 | 0 |
 | Functions longer than 50 NLOC | 0 |
